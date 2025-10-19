@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="std_burst" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <BurstFilter rate="0.1" maxBurst="5"/>
+            </FilterRouteThen>
+        </FilterRoute>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="fst_burst" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <FastBurstFilter rate="0.1" maxBurst="5"/>
+            </FilterRouteThen>
+        </FilterRoute>
+        <DefaultFilterRoute>
+            <NeutralFilter/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="Console"/>
+        </Root>
+
+        <Logger name="com.github.mlangc.more.log4j2.filters.BurstFilterBenchmark.Burst">
+            <BurstFilter rate="0.1" maxBurst="5"/>
+        </Logger>
+
+        <Logger name="com.github.mlangc.more.log4j2.filters.BurstFilterBenchmark.FastBurst">
+            <FastBurstFilter rate="0.1" maxBurst="5"/>
+        </Logger>
+    </Loggers>
+</Configuration>

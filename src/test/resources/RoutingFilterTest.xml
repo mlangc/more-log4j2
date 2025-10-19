@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="topLevel" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <RegexFilter regex=".*top.*" useRawMsg="false"/>
+            </FilterRouteThen>
+        </FilterRoute>
+        <DefaultFilterRoute>
+            <NeutralFilter/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
+            <RoutingFilter>
+                <FilterRoute>
+                    <FilterRouteIf>
+                        <MarkerFilter marker="appender" onMatch="ACCEPT"/>
+                    </FilterRouteIf>
+                    <FilterRouteThen>
+                        <RegexFilter regex=".*appender stage.*" useRawMsg="false"/>
+                    </FilterRouteThen>
+                </FilterRoute>
+                <DefaultFilterRoute>
+                    <AcceptAllFilter/>
+                </DefaultFilterRoute>
+            </RoutingFilter>
+        </Console>
+        <List name="ThrottledListAppender">
+            <Filters>
+                <RoutingFilter>
+                    <FilterRoute>
+                        <FilterRouteIf>
+                            <MarkerFilter marker="appender" onMatch="ACCEPT"/>
+                        </FilterRouteIf>
+                        <FilterRouteThen>
+                            <RegexFilter regex=".*appender stage.*" useRawMsg="false"/>
+                        </FilterRouteThen>
+                    </FilterRoute>
+                    <DefaultFilterRoute>
+                        <NeutralFilter/>
+                    </DefaultFilterRoute>
+                </RoutingFilter>
+                <BurstFilter rate="1" maxBurst="10000"/>
+            </Filters>
+        </List>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="Console">
+                <RoutingFilter>
+                    <FilterRoute>
+                        <FilterRouteIf>
+                            <MarkerFilter marker="appenderCtl" onMatch="ACCEPT"/>
+                        </FilterRouteIf>
+                        <FilterRouteThen>
+                            <RegexFilter regex=".*appender control.*" useRawMsg="false"/>
+                        </FilterRouteThen>
+                    </FilterRoute>
+                    <DefaultFilterRoute>
+                        <AcceptAllFilter/>
+                    </DefaultFilterRoute>
+                </RoutingFilter>
+            </AppenderRef>
+
+            <AppenderRef ref="ThrottledListAppender">
+                <RoutingFilter>
+                    <FilterRoute>
+                        <FilterRouteIf>
+                            <MarkerFilter marker="appenderCtl" onMatch="ACCEPT"/>
+                        </FilterRouteIf>
+                        <FilterRouteThen>
+                            <RegexFilter regex=".*appender control.*" useRawMsg="false"/>
+                        </FilterRouteThen>
+                    </FilterRoute>
+                    <DefaultFilterRoute>
+                        <AcceptAllFilter/>
+                    </DefaultFilterRoute>
+                </RoutingFilter>
+            </AppenderRef>
+        </Root>
+
+        <Logger name="com.github.mlangc.more.log4j2.filters.RoutingFilterTest.Colored">
+            <RoutingFilter>
+                <FilterRoute>
+                    <FilterRouteIf>
+                        <MarkerFilter marker="green" onMatch="ACCEPT"/>
+                    </FilterRouteIf>
+                    <FilterRouteThen>
+                        <RegexFilter regex=".*green.*" useRawMsg="false"/>
+                    </FilterRouteThen>
+                </FilterRoute>
+
+                <FilterRoute>
+                    <FilterRouteIf>
+                        <MarkerFilter marker="yellow" onMatch="ACCEPT"/>
+                    </FilterRouteIf>
+                    <FilterRouteThen>
+                        <RegexFilter regex=".*yellow.*" useRawMsg="false"/>
+                    </FilterRouteThen>
+                </FilterRoute>
+
+                <FilterRoute>
+                    <FilterRouteIf>
+                        <MarkerFilter marker="red" onMatch="ACCEPT"/>
+                    </FilterRouteIf>
+                    <FilterRouteThen>
+                        <RegexFilter regex=".*red.*" useRawMsg="false"/>
+                    </FilterRouteThen>
+                </FilterRoute>
+
+                <FilterRoute>
+                    <FilterRouteIf>
+                        <MarkerFilter marker="blue" onMatch="ACCEPT"/>
+                    </FilterRouteIf>
+                    <FilterRouteThen>
+                        <RegexFilter regex=".*blue.*" useRawMsg="false"/>
+                    </FilterRouteThen>
+                </FilterRoute>
+
+                <DefaultFilterRoute>
+                    <RegexFilter regex=".*(black|grey|white).*" useRawMsg="false"/>
+                </DefaultFilterRoute>
+            </RoutingFilter>
+        </Logger>
+    </Loggers>
+</Configuration>

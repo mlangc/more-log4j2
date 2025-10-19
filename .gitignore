@@ -1,2 +1,6 @@
 .idea
 *.jar
+target/
+*.class
+.java-version
+jmh-result.json
