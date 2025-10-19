@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Configuration name="FastBurstCompatTest">
+<Configuration>
     <Appenders>
-        <MarkerBasedCountingAppender name="MarkerBasedCountingAppender.Burst"/>
-        <MarkerBasedCountingAppender name="MarkerBasedCountingAppender.FastBurst"/>
+        <CountingAppender name="CountingAppender.Burst"/>
+        <CountingAppender name="CountingAppender.FastBurst"/>
     </Appenders>
 
     <Loggers>
         <Root level="INFO"/>
         <Logger name="com.github.mlangc.more.log4j2.filters.FastBurstFilterCompatTest.Burst">
             <BurstFilter rate="1000" maxBurst="100"/>
-            <AppenderRef ref="MarkerBasedCountingAppender.Burst"/>
+            <AppenderRef ref="CountingAppender.Burst"/>
         </Logger>
         <Logger name="com.github.mlangc.more.log4j2.filters.FastBurstFilterCompatTest.FastBurst">
             <FastBurstFilter rate="1000" maxBurst="100"/>
-            <AppenderRef ref="MarkerBasedCountingAppender.FastBurst"/>
+            <AppenderRef ref="CountingAppender.FastBurst"/>
         </Logger>
     </Loggers>
 </Configuration>

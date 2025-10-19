@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Unit test for <code>BurstFilter</code>.
  */
-@LoggerContextSource("log4j-fast-burst.xml")
+@LoggerContextSource("FastBurstMigratedFromLog4j2Test.xml")
 class FastBurstFilterMigratedFromLog4j2Test {
 
     private final ListAppender app;

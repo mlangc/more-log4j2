@@ -12,11 +12,10 @@ import org.apache.logging.log4j.core.config.plugins.PluginBuilderFactory;
 import org.apache.logging.log4j.core.filter.AbstractFilter;
 import org.apache.logging.log4j.message.Message;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.DelayQueue;
-import java.util.concurrent.Delayed;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Plugin(name = "FastBurstFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
 public final class FastBurstFilter extends AbstractFilter {
@@ -26,8 +25,6 @@ public final class FastBurstFilter extends AbstractFilter {
     private static final int DEFAULT_RATE = 10;
 
     private static final int DEFAULT_RATE_MULTIPLE = 100;
-
-    private static final int HASH_SHIFT = 32;
 
     /**
      * Level of messages to be filtered. Anything at or below this level will be
@@ -39,22 +36,28 @@ public final class FastBurstFilter extends AbstractFilter {
 
     private final long burstInterval;
 
-    private final DelayQueue<LogDelay> history = new DelayQueue<>();
+    private Future<?> schedule;
 
-    private final Queue<LogDelay> available = new ConcurrentLinkedQueue<>();
+    private final AtomicLong logPermits;
 
-    static LogDelay createLogDelay(final long expireTime) {
-        return new LogDelay(expireTime);
-    }
+    private final long maxBurst;
 
-    private FastBurstFilter(
+    FastBurstFilter(
             final Level level, final float rate, final long maxBurst, final Result onMatch, final Result onMismatch) {
         super(onMatch, onMismatch);
         this.level = level;
+        this.logPermits = new AtomicLong(maxBurst);
+        this.maxBurst = maxBurst;
         this.burstInterval = (long) (NANOS_IN_SECONDS * (maxBurst / rate));
-        for (int i = 0; i < maxBurst; ++i) {
-            available.add(createLogDelay(0));
-        }
+        this.schedule = createSchedule();
+    }
+
+    private Future<?> createSchedule() {
+        return ForkJoinPool.commonPool().scheduleAtFixedRate(this::refillPermits, burstInterval, burstInterval, TimeUnit.NANOSECONDS);
+    }
+
+    private void refillPermits() {
+        logPermits.set(maxBurst);
     }
 
     @Override
@@ -221,6 +224,10 @@ public final class FastBurstFilter extends AbstractFilter {
         return filter(level);
     }
 
+    private boolean acquireLogPermit() {
+        return logPermits.get() > 0 && logPermits.decrementAndGet() >= 0;
+    }
+
     /**
      * Decide if we're going to log <code>event</code> based on whether the
      * maximum burst of log statements has been exceeded.
@@ -230,95 +237,30 @@ public final class FastBurstFilter extends AbstractFilter {
      */
     private Result filter(final Level level) {
         if (this.level.isMoreSpecificThan(level)) {
-            LogDelay delay = history.poll();
-            while (delay != null) {
-                available.add(delay);
-                delay = history.poll();
-            }
-            delay = available.poll();
-            if (delay != null) {
-                delay.setDelay(burstInterval);
-                history.add(delay);
-                return onMatch;
-            }
-            return onMismatch;
+            return acquireLogPermit() ? onMatch : onMismatch;
         }
         return onMatch;
     }
 
-    /**
-     * Returns the number of available slots. Used for unit testing.
-     * @return The number of available slots.
-     */
-    public int getAvailable() {
-        return available.size();
-    }
-
-    /**
-     * Clear the history. Used for unit testing.
-     */
-    public void clear() {
-        for (final LogDelay delay : history) {
-            history.remove(delay);
-            available.add(delay);
-        }
-    }
-
     @Override
     public String toString() {
-        return "level=" + level.toString() + ", interval=" + burstInterval + ", max=" + history.size();
+        return "level=" + level.toString() + ", interval=" + burstInterval + ", max=" + maxBurst;
     }
 
     /**
-     * Delay object to represent each log event that has occurred within the timespan.
-     *
-     * Consider this class private, package visibility for testing.
+     * For testing & compatibility with the original burst filter.
      */
-    private static class LogDelay implements Delayed {
+    public long getAvailable() {
+        return logPermits.get();
+    }
 
-        LogDelay(final long expireTime) {
-            this.expireTime = expireTime;
-        }
-
-        private long expireTime;
-
-        public void setDelay(final long delay) {
-            this.expireTime = delay + System.nanoTime();
-        }
-
-        @Override
-        public long getDelay(final TimeUnit timeUnit) {
-            return timeUnit.convert(expireTime - System.nanoTime(), TimeUnit.NANOSECONDS);
-        }
-
-        @Override
-        public int compareTo(final Delayed delayed) {
-            final long diff = this.expireTime - ((LogDelay) delayed).expireTime;
-            return Long.signum(diff);
-        }
-
-        @Override
-        public boolean equals(final Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-
-            final LogDelay logDelay = (LogDelay) o;
-
-            if (expireTime != logDelay.expireTime) {
-                return false;
-            }
-
-            return true;
-        }
-
-        @Override
-        public int hashCode() {
-            return (int) (expireTime ^ (expireTime >>> HASH_SHIFT));
-        }
+    /**
+     * For testing & compatibility with the original burst filter.
+     */
+    public void clear() {
+        schedule.cancel(false);
+        schedule = createSchedule();
+        refillPermits();
     }
 
     @PluginBuilderFactory
@@ -379,5 +321,11 @@ public final class FastBurstFilter extends AbstractFilter {
             }
             return new FastBurstFilter(this.level, this.rate, this.maxBurst, this.getOnMatch(), this.getOnMismatch());
         }
+    }
+
+    @Override
+    public boolean stop(long timeout, TimeUnit timeUnit) {
+        this.schedule.cancel(false);
+        return super.stop(timeout, timeUnit);
     }
 }
