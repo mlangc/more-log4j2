@@ -36,6 +36,11 @@
             <artifactId>log4j-core-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-junit5-plugin</artifactId>
+            <version>1.2.1</version>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
@@ -66,6 +71,53 @@
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.5.4</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.1</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-Alog4j.graalvm.groupId=${project.groupId}</arg>
+                        <arg>-Alog4j.graalvm.artifactId=${project.artifactId}</arg>
+                    </compilerArgs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.apache.logging.log4j</groupId>
+                                    <artifactId>log4j-core</artifactId>
+                                </path>
+                            </annotationProcessorPaths>
+                            <annotationProcessors>
+                                <processor>org.apache.logging.log4j.core.config.plugins.processor.PluginProcessor</processor>
+                                <processor>org.apache.logging.log4j.core.config.plugins.processor.GraalVmProcessor</processor>
+                            </annotationProcessors>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.21.0</version>
+
+                <configuration>
+                    <excludedMethods>
+                        <excludedMethod>toString</excludedMethod>
+                    </excludedMethods>
+                    <features>
+                        <feature>+auto_threads</feature>
+                    </features>
+                </configuration>
             </plugin>
         </plugins>
     </build>
