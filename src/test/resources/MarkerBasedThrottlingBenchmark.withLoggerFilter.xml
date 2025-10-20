@@ -5,12 +5,17 @@
             <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
         </Console>
     </Appenders>
-    <Filters>
-        <FastBurstFilter rate="1000" maxBurst="100"/>
-    </Filters>
     <Loggers>
         <Root level="info">
             <AppenderRef ref="Console"/>
+            <BurstFilter rate="5" maxBurst="5"/>
         </Root>
+
+        <Logger name="com.github.mlangc.more.log4j2.filters.MarkerBasedThrottlingBenchmark">
+            <Filters>
+                <MarkerFilter marker="throttled" onMismatch="ACCEPT"/>
+                <BurstFilter rate="1" maxBurst="1"/>
+            </Filters>
+        </Logger>
     </Loggers>
 </Configuration>
