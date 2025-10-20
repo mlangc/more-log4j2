@@ -14,7 +14,9 @@ import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.message.Message;
 
 import java.util.Arrays;
+import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
 import static java.util.Objects.requireNonNullElse;
 
 @Plugin(name = "RoutingFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
@@ -24,6 +26,10 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
     @Plugin(name = "DefaultFilterRoute", category = Node.CATEGORY)
     public record DefaultFilterRoute(Filter filter) {
+        public DefaultFilterRoute {
+            requireNonNull(filter);
+        }
+
         @PluginFactory
         public static DefaultFilterRoute create(@PluginElement("DefaultFilterRoute") Filter filter) {
             return new DefaultFilterRoute(filter);
@@ -32,6 +38,11 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
     @Plugin(name = "FilterRoute", category = Node.CATEGORY, printObject = true)
     public record FilterRoute(FilterRouteIf filterRouteIf, FilterRouteThen filterRouteThen) {
+        public FilterRoute {
+            requireNonNull(filterRouteIf);
+            requireNonNull(filterRouteThen);
+        }
+
         @PluginFactory
         public static FilterRoute create(
                 @PluginElement("FilterRouteIf") FilterRouteIf filterRouteIf,
@@ -50,6 +61,10 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
     @Plugin(name = "FilterRouteThen", category = Node.CATEGORY, printObject = true)
     public record FilterRouteThen(Filter filter) {
+        public FilterRouteThen {
+            requireNonNull(filter);
+        }
+
         @PluginFactory
         public static FilterRouteThen create(@PluginElement("FilterRouteThen") Filter filter) {
             return new FilterRouteThen(filter);
@@ -57,8 +72,8 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
     }
 
     public RoutingFilter(DefaultFilterRoute defaultFilterRoute, FilterRoute[] filterRoutes) {
-        this.defaultFilterRoute = defaultFilterRoute;
-        this.filterRoutes = filterRoutes;
+        this.defaultFilterRoute = requireNonNull(defaultFilterRoute);
+        this.filterRoutes = requireNonNull(filterRoutes);
     }
 
     @PluginFactory
