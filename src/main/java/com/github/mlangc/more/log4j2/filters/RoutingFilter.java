@@ -9,7 +9,6 @@ import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.config.Node;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
-import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
 import org.apache.logging.log4j.core.config.plugins.PluginElement;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.message.Message;
@@ -57,18 +56,17 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
         }
     }
 
-    public RoutingFilter(Result onNoRoute, DefaultFilterRoute defaultFilterRoute, FilterRoute[] filterRoutes) {
+    public RoutingFilter(DefaultFilterRoute defaultFilterRoute, FilterRoute[] filterRoutes) {
         this.defaultFilterRoute = defaultFilterRoute;
         this.filterRoutes = filterRoutes;
     }
 
     @PluginFactory
     public static RoutingFilter create(
-            @PluginAttribute("onNoRoute") Result onNoRoute,
             @PluginElement("DefaultFilterRoute") DefaultFilterRoute defaultFilterRoute,
             @PluginElement("FilterRoute") FilterRoute... filterRoutes
     ) {
-        return new RoutingFilter(requireNonNullElse(onNoRoute, Result.NEUTRAL), defaultFilterRoute, filterRoutes);
+        return new RoutingFilter(defaultFilterRoute, filterRoutes);
     }
 
     @Override
