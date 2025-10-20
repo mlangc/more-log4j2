@@ -53,6 +53,10 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
     @Plugin(name = "FilterRouteIf", category = Node.CATEGORY, printObject = true)
     public record FilterRouteIf(Filter filter) {
+        public FilterRouteIf {
+            requireNonNull(filter);
+        }
+
         @PluginFactory
         public static FilterRouteIf create(@PluginElement("FilterRouteIf") Filter filter) {
             return new FilterRouteIf(filter);
