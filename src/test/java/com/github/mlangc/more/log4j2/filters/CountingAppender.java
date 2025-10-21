@@ -28,11 +28,16 @@ import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
 @Plugin(name = "CountingAppender", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
 public class CountingAppender extends AbstractAppender {
     private final LongAdder numEvents = new LongAdder();
+    private final LongAdder numEventsWithoutMarker = new LongAdder();
+    private final ConcurrentHashMap<String, Long> numEventsWithMarker = new ConcurrentHashMap<>();
 
     protected CountingAppender(String name) {
         super(name, null, null, false, Property.EMPTY_ARRAY);
@@ -41,6 +46,12 @@ public class CountingAppender extends AbstractAppender {
     @Override
     public void append(LogEvent event) {
         numEvents.increment();
+
+        if (event.getMarker() == null) {
+            numEventsWithoutMarker.increment();
+        } else {
+            numEventsWithMarker.merge(event.getMarker().getName(), 1L, Long::sum);
+        }
     }
 
     @PluginFactory
@@ -52,7 +63,17 @@ public class CountingAppender extends AbstractAppender {
         return numEvents.longValue();
     }
 
+    long currentCountWithoutMarker() {
+        return numEventsWithoutMarker.longValue();
+    }
+
+    Map<String, Long> currentCountsWithMarkers() {
+        return Collections.unmodifiableMap(numEventsWithMarker);
+    }
+
     void clear() {
         numEvents.reset();
+        numEventsWithoutMarker.reset();
+        numEventsWithMarker.clear();
     }
 }
