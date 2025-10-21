@@ -7,6 +7,17 @@
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
+    <developers>
+        <developer>
+            <id>mlangc</id>
+            <name>Matthias Langer</name>
+            <email>m.langer798@gmail.com</email>
+            <roles>
+                <role>developer</role>
+            </roles>
+        </developer>
+    </developers>
+
     <properties>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
@@ -135,6 +146,29 @@
                         <feature>+auto_threads</feature>
                     </features>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>2.7.0</version>
+                <configuration>
+                    <licenseName>apache_v2</licenseName>
+                    <inceptionYear>2025</inceptionYear>
+                    <organizationName>Matthias Langer</organizationName>
+                    <projectName>more-log4j2</projectName>
+                    <addJavaLicenseAfterPackage>false</addJavaLicenseAfterPackage>
+                    <canUpdateCopyright>true</canUpdateCopyright>
+                    <canUpdateDescription>true</canUpdateDescription>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>apache</id>
+                        <goals>
+                            <goal>update-file-header</goal>
+                        </goals>
+                        <phase>process-sources</phase>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
