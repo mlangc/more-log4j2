@@ -1,13 +1,20 @@
 # more-log4j2
+
 A collection of plugins for log4j2.
 
 ## Features
+
 ### Routing Filter
-I'd like to explain the `RoutingFilter` by illustrating how it can solve two use cases:
+
+I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases:
+
 #### Use Case I: Marker Based Log Throttling
+
 After defining a global filter, like
+
 ```xml
-<Configuration status="WARN">
+
+<Configuration status="warn">
     <Filters>
         <RoutingFilter>
             <FilterRoute>
@@ -38,11 +45,14 @@ After defining a global filter, like
     <!-- ... -->
 </Configuration>
 ```
+
 you can use marker based log throttling as follows:
+
 ```java
 // ...
 public static final Marker THROTTLED_1 = MarkerFactory.getMarker("throttled1");
 public static final Marker THROTTLED_10 = MarkerFactory.getMarker("throttled10");
+
 // ...
 void anywhere() {
     LOG.info(THROTTLED_1, "Throttled to 1 log per sec");
@@ -51,9 +61,56 @@ void anywhere() {
 }
 ```
 
+#### Use Case II: Throttling DEBUG Logs
+
+Let's imagine that you want to enable `DEBUG` or `TRACE` logs, at least for parts of the executed code. At the same time, you want
+to be on the save side, and avoid log spam reliably. Then `RoutingFilter` can help you as follows:
+
+```xml
+
+<Configuration status="warn">
+    <Filters>
+        <RoutingFilter>
+            <FilterRoute>
+                <FilterRouteIf>
+                    <ThresholdFilter level="INFO" onMatch="ACCEPT"/>
+                </FilterRouteIf>
+                <FilterRouteThen>
+                    <NeutralFilter/>
+                </FilterRouteThen>
+            </FilterRoute>
+
+            <DefaultFilterRoute>
+                <!-- DEBUG and TRACE logs are handled here -->
+                <BurstFilter rate="1" maxBurst="5"/>
+            </DefaultFilterRoute>
+        </RoutingFilter>
+    </Filters>
+    <!-- ... -->
+    <!-- ... -->
+    <!-- ... -->
+</Configuration>
+```
+
+#### Reference
+
+`RoutingFilter` has no attributes, and is configured by its nested `FilterRoute` and `DefaultFilterRoute` elements:
+Each filter route must contain two child elements, `FilterRouteIf` and `FilterRouteThen` and both of them must contain filters
+themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (note that `NEUTRAL` is not enough), the filter branch in
+`FilterRouteThen` is taken and all remaining `FilterRoute` elements, as well as the mandatory `DefaultFilterRoute`
+are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
+
+### AcceptAllFilter & NeutralFilter
+
+These two filters don't have any options, and always return either `ACCEPT` or `NEUTRAL`. They complement 
+[DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2,
+and are especially useful in connection with `RoutingFilter`.
+
 ## Why not extend log4j2 directly?
+
 My plan is to migrate the most useful parts of this library to mainline log4j2 if possible. However, before bothering the log4j2
 maintainers with my ideas, I'd like to experiment and collect some feedback.
 
 ## License
+
 This project is licensed under the Apache License 2.0.

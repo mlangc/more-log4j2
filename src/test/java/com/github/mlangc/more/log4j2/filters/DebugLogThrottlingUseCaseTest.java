@@ -19,9 +19,8 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.Marker;
-import org.apache.logging.log4j.MarkerManager;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
 import org.apache.logging.log4j.core.test.junit.Named;
@@ -35,16 +34,13 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@LoggerContextSource("MarkerBasedLogThrottlingUseCaseTest.xml")
-class MarkerBasedLogThrottlingUseCaseTest {
-    static final Marker THROTTLED_1 = MarkerManager.getMarker("throttled1");
-    static final Marker THROTTLED_10 = MarkerManager.getMarker("throttled10");
-
+@LoggerContextSource("DebugLogThrottlingUseCaseTest.xml")
+class DebugLogThrottlingUseCaseTest {
     private final LoggerContext loggerContext;
     private final CountingAppender countingAppender;
     private final Logger log;
 
-    MarkerBasedLogThrottlingUseCaseTest(LoggerContext loggerContext, @Named("CountingAppender") CountingAppender countingAppender) {
+    DebugLogThrottlingUseCaseTest(LoggerContext loggerContext, @Named("CountingAppender") CountingAppender countingAppender) {
         this.loggerContext = loggerContext;
         this.countingAppender = countingAppender;
         this.log = loggerContext.getLogger(getClass());
@@ -64,24 +60,27 @@ class MarkerBasedLogThrottlingUseCaseTest {
     @Test
     void shouldThrottleLogsBasedOnMarkers() {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            Runnable logTillStopped = () -> {
-                for (int i = 0; i < 10_000; i++) {
-                    log.info(THROTTLED_1, "at most once per second");
-                    log.info(THROTTLED_10, "at most 10 times per second");
+            Runnable generateLogSpam = () -> {
+                for (int i = 0; i < 1000; i++) {
+                    log.debug("debug me tender");
+                    log.info("inform me early");
                 }
             };
 
             var futures = IntStream.range(0, 4)
-                    .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped, executor))
+                    .mapToObj(ignore -> CompletableFuture.runAsync(generateLogSpam, executor))
                     .toList();
 
             assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
-            assertThat(countingAppender.currentCountWithoutMarker()).isZero();
 
-            var countsWithMarker = countingAppender.currentCountsWithMarkers();
-            assertThat(countsWithMarker.getOrDefault(THROTTLED_1.getName(), 0L))
-                    .isNotZero()
-                    .isLessThan(countsWithMarker.getOrDefault(THROTTLED_10.getName(), 0L));
+            var countsWithLevel = countingAppender.currentCountsWithLevels();
+            assertThat(countsWithLevel.get(Level.DEBUG))
+                    .as("countsWithLevel=%s", countsWithLevel)
+                    .isLessThan(countsWithLevel.getOrDefault(Level.INFO, 0L));
+
+            assertThat(countingAppender.currentCount())
+                    .isEqualTo(countsWithLevel.get(Level.INFO) + countsWithLevel.get(Level.DEBUG))
+                    .isEqualTo(5 + 10);
         }
     }
 }

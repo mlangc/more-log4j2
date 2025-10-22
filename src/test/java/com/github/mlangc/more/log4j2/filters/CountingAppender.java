@@ -19,6 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
@@ -38,6 +39,7 @@ public class CountingAppender extends AbstractAppender {
     private final LongAdder numEvents = new LongAdder();
     private final LongAdder numEventsWithoutMarker = new LongAdder();
     private final ConcurrentHashMap<String, Long> numEventsWithMarker = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Level, Long> numEventsWithLevel = new ConcurrentHashMap<>();
 
     protected CountingAppender(String name) {
         super(name, null, null, false, Property.EMPTY_ARRAY);
@@ -46,6 +48,7 @@ public class CountingAppender extends AbstractAppender {
     @Override
     public void append(LogEvent event) {
         numEvents.increment();
+        numEventsWithLevel.merge(event.getLevel(), 1L, Long::sum);
 
         if (event.getMarker() == null) {
             numEventsWithoutMarker.increment();
@@ -69,6 +72,10 @@ public class CountingAppender extends AbstractAppender {
 
     Map<String, Long> currentCountsWithMarkers() {
         return Collections.unmodifiableMap(numEventsWithMarker);
+    }
+
+    Map<Level, Long> currentCountsWithLevels() {
+        return Collections.unmodifiableMap(numEventsWithLevel);
     }
 
     void clear() {

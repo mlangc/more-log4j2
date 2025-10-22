@@ -19,9 +19,14 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
+import org.apache.logging.log4j.MarkerManager;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Filter.Result;
+import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.filter.DenyAllFilter;
+import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
+import org.apache.logging.log4j.core.test.junit.Named;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -54,5 +59,26 @@ class ConstantFilterTest {
                 new TestCase(new AcceptAllFilter(), Result.ACCEPT),
                 new TestCase(DenyAllFilter.newBuilder().build(), Result.DENY),
                 new TestCase(new NeutralFilter(), Result.NEUTRAL));
+    }
+
+    @Test
+    @LoggerContextSource("ConstantFilterTest.xml")
+    void constantFiltersShouldWorkInConfig(LoggerContext loggerContext, @Named("CountingAppender") CountingAppender countingAppender) {
+        var log = loggerContext.getLogger(getClass());
+        log.debug("test");
+        log.info("test");
+        assertThat(countingAppender.currentCount()).isOne();
+
+        countingAppender.clear();
+        var always = MarkerManager.getMarker("always");
+        log.debug(always, "test");
+        log.info(always, "test");
+        assertThat(countingAppender.currentCount()).isEqualTo(2);
+
+        countingAppender.clear();
+        var never = MarkerManager.getMarker("never");
+        log.debug(never, "test");
+        log.info(never, "test");
+        assertThat(countingAppender.currentCount()).isZero();
     }
 }
