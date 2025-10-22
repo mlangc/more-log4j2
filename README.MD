@@ -110,7 +110,8 @@ and are especially useful in connection with `RoutingFilter`.
 ### Is that all?
 I have some additional ideas, but would like to start small, and collect some feedback first.
 
-## Why not extend log4j2 directly?
+## FAQ
+### Why not extend log4j2 directly?
 
 My plan is to migrate the most useful parts of this library to mainline log4j2 if possible. However, before bothering the log4j2
 maintainers with my ideas, I'd like to experiment and collect some feedback.
