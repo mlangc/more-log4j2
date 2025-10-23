@@ -107,6 +107,9 @@ These two filters don't have any options, and always return either `ACCEPT` or `
 [DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2,
 and are especially useful in connection with `RoutingFilter`.
 
+### Is that all?
+I have some additional ideas, but would like to start small, and collect some feedback first.
+
 ## Why not extend log4j2 directly?
 
 My plan is to migrate the most useful parts of this library to mainline log4j2 if possible. However, before bothering the log4j2
