@@ -73,9 +73,10 @@ to be on the save side, and avoid log spam reliably. Then `RoutingFilter` can he
         <RoutingFilter>
             <FilterRoute>
                 <FilterRouteIf>
-                    <ThresholdFilter level="INFO" onMatch="ACCEPT"/>
+                    <ThresholdFilter level="info" onMatch="ACCEPT"/>
                 </FilterRouteIf>
                 <FilterRouteThen>
+                    <!-- No special handling for INFO and above -->
                     <NeutralFilter/>
                 </FilterRouteThen>
             </FilterRoute>
