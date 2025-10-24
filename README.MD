@@ -1,8 +1,7 @@
 # more-log4j2
-![Maven Central Version](https://img.shields.io/maven-central/v/com.github.mlangc/more-log4j2)
+[![Maven Central](https://img.shields.io/maven-central/v/com.github.mlangc/more-log4j2.svg?label=Maven%20Central)](https://search.maven.org/artifact/com.github.mlangc/more-log4j2)
 
 A collection of plugins for log4j2.
-
 
 ## Features
 
