@@ -133,6 +133,6 @@ I have some additional ideas, but would like to start small, and collect some fe
 My plan is to migrate the most useful parts of this library to mainline log4j2 if possible. However, before bothering the log4j2
 maintainers with my ideas, I'd like to experiment and collect some feedback.
 
-## License
+### License
 
 This project is licensed under the Apache License 2.0.
