@@ -22,7 +22,7 @@ After defining a global filter, like
                     <MarkerFilter marker="throttled10" onMatch="ACCEPT"/>
                 </FilterRouteIf>
                 <FilterRouteThen>
-                    <BurstFilter rate="10" maxBurst="20"/>
+                    <BurstFilter rate="10"/>
                 </FilterRouteThen>
             </FilterRoute>
 
@@ -31,7 +31,7 @@ After defining a global filter, like
                     <MarkerFilter marker="throttled1" onMatch="ACCEPT"/>
                 </FilterRouteIf>
                 <FilterRouteThen>
-                    <BurstFilter rate="1" maxBurst="2"/>
+                    <BurstFilter rate="1"/>
                 </FilterRouteThen>
             </FilterRoute>
 
@@ -56,15 +56,15 @@ public static final Marker THROTTLED_10 = MarkerFactory.getMarker("throttled10")
 // ...
 void anywhere() {
     LOG.info(THROTTLED_1, "Throttled to 1 log per sec");
-    LOG.info(THROTTLED_10, "Throttled to 10 times per sec");
+    LOG.info(THROTTLED_10, "Throttled to 10 logs per sec");
     LOG.info("Not throttled at all");
 }
 ```
 
 #### Use Case II: Throttling DEBUG Logs
 
-Let's imagine that you want to enable `DEBUG` or `TRACE` logs, at least for parts of the executed code. At the same time, you want
-to be on the save side, and avoid log spam reliably. Then `RoutingFilter` can help you as follows:
+Let's imagine that you want to enable `DEBUG` or `TRACE` logs, at least for parts your application or library code. At the same
+time, you want to be on the save side, and avoid log spam reliably. Then `RoutingFilter` can help you as follows:
 
 ```xml
 
@@ -83,7 +83,7 @@ to be on the save side, and avoid log spam reliably. Then `RoutingFilter` can he
 
             <DefaultFilterRoute>
                 <!-- DEBUG and TRACE logs are handled here -->
-                <BurstFilter rate="1" maxBurst="5"/>
+                <BurstFilter rate="1"/>
             </DefaultFilterRoute>
         </RoutingFilter>
     </Filters>
@@ -103,14 +103,16 @@ are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` ar
 
 ### AcceptAllFilter & NeutralFilter
 
-These two filters don't have any options, and always return either `ACCEPT` or `NEUTRAL`. They complement 
-[DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2,
-and are especially useful in connection with `RoutingFilter`.
+These two filters don't have any options, and always return either `ACCEPT` or `NEUTRAL`. They complement
+[DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2, and are
+especially useful in connection with `RoutingFilter`.
 
 ### Is that all?
+
 I have some additional ideas, but would like to start small, and collect some feedback first.
 
 ## FAQ
+
 ### Why not extend log4j2 directly?
 
 My plan is to migrate the most useful parts of this library to mainline log4j2 if possible. However, before bothering the log4j2
