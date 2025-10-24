@@ -106,7 +106,7 @@ In Java, the behaviour of the filter can be summarized as follows:
 
 ```java
 for (var route : routes) {
-    if (route.matches(event)) {
+    if (route.accepts(event)) {
         route.apply(event);
         return;
     }
