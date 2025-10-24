@@ -29,7 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -63,25 +63,24 @@ class MarkerBasedLogThrottlingUseCaseTest {
 
     @Test
     void shouldThrottleLogsBasedOnMarkers() {
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            Runnable logTillStopped = () -> {
-                for (int i = 0; i < 10_000; i++) {
-                    log.info(THROTTLED_1, "at most once per second");
-                    log.info(THROTTLED_10, "at most 10 times per second");
-                }
-            };
+        var executor = ForkJoinPool.commonPool();
+        Runnable logTillStopped = () -> {
+            for (int i = 0; i < 10_000; i++) {
+                log.info(THROTTLED_1, "at most once per second");
+                log.info(THROTTLED_10, "at most 10 times per second");
+            }
+        };
 
-            var futures = IntStream.range(0, 4)
-                    .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped, executor))
-                    .toList();
+        var futures = IntStream.range(0, 4)
+                .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped, executor))
+                .toList();
 
-            assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
-            assertThat(countingAppender.currentCountWithoutMarker()).isZero();
+        assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
+        assertThat(countingAppender.currentCountWithoutMarker()).isZero();
 
-            var countsWithMarker = countingAppender.currentCountsWithMarkers();
-            assertThat(countsWithMarker.getOrDefault(THROTTLED_1.getName(), 0L))
-                    .isNotZero()
-                    .isLessThan(countsWithMarker.getOrDefault(THROTTLED_10.getName(), 0L));
-        }
+        var countsWithMarker = countingAppender.currentCountsWithMarkers();
+        assertThat(countsWithMarker.getOrDefault(THROTTLED_1.getName(), 0L))
+                .isNotZero()
+                .isLessThan(countsWithMarker.getOrDefault(THROTTLED_10.getName(), 0L));
     }
 }

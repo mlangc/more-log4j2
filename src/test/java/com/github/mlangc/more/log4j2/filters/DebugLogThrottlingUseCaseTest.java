@@ -28,7 +28,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -59,28 +60,27 @@ class DebugLogThrottlingUseCaseTest {
 
     @Test
     void shouldThrottleLogsBasedOnMarkers() {
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            Runnable generateLogSpam = () -> {
-                for (int i = 0; i < 1000; i++) {
-                    log.debug("debug me tender");
-                    log.info("inform me early");
-                }
-            };
+        Executor executor = ForkJoinPool.commonPool();
+        Runnable generateLogSpam = () -> {
+            for (int i = 0; i < 1000; i++) {
+                log.debug("debug me tender");
+                log.info("inform me early");
+            }
+        };
 
-            var futures = IntStream.range(0, 4)
-                    .mapToObj(ignore -> CompletableFuture.runAsync(generateLogSpam, executor))
-                    .toList();
+        var futures = IntStream.range(0, 4)
+                .mapToObj(ignore -> CompletableFuture.runAsync(generateLogSpam, executor))
+                .toList();
 
-            assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
+        assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
 
-            var countsWithLevel = countingAppender.currentCountsWithLevels();
-            assertThat(countsWithLevel.get(Level.DEBUG))
-                    .as("countsWithLevel=%s", countsWithLevel)
-                    .isLessThan(countsWithLevel.getOrDefault(Level.INFO, 0L));
+        var countsWithLevel = countingAppender.currentCountsWithLevels();
+        assertThat(countsWithLevel.get(Level.DEBUG))
+                .as("countsWithLevel=%s", countsWithLevel)
+                .isLessThan(countsWithLevel.getOrDefault(Level.INFO, 0L));
 
-            assertThat(countingAppender.currentCount())
-                    .isEqualTo(countsWithLevel.get(Level.INFO) + countsWithLevel.get(Level.DEBUG))
-                    .isEqualTo(5 + 10);
-        }
+        assertThat(countingAppender.currentCount())
+                .isEqualTo(countsWithLevel.get(Level.INFO) + countsWithLevel.get(Level.DEBUG))
+                .isEqualTo(5 + 10);
     }
 }
