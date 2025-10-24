@@ -63,8 +63,8 @@ void anywhere() {
 
 #### Use Case II: Throttling DEBUG Logs
 
-Let's imagine that you want to enable `DEBUG` or `TRACE` logs, at least for parts your application or library code. At the same
-time, you want to be on the save side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
+Let's imagine that you want to enable `DEBUG` or `TRACE` logs for parts your application or library code. At the same time, you
+want to be on the save side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
 
 ```xml
 
@@ -96,7 +96,7 @@ time, you want to be on the save side, and reliably avoid log spam. Then `Routin
 #### RoutingFilter Reference Documentation
 
 `RoutingFilter` has no attributes, and is configured by its nested `FilterRoute` and `DefaultFilterRoute` elements:
-Each filter route must contain two child elements, `FilterRouteIf` and `FilterRouteThen` and both of them must contain filters
+Each `FilterRoute` must contain two child elements, `FilterRouteIf` and `FilterRouteThen` and both of them must contain filters
 themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (note that `NEUTRAL` is not enough), the filter branch in
 `FilterRouteThen` is taken and all remaining `FilterRoute` elements, as well as the mandatory `DefaultFilterRoute`
 are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
@@ -104,17 +104,18 @@ are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` ar
 In Java, the behaviour of the filter can be summarized as follows:
 
 ```java
-for (var route : routes) {
-    if (route.matches(event)) {
-        route.apply(event);
-        return;
+for(var route :routes){
+    if(route.matches(event)) {
+    route.apply(event);
+    return;
     }
 }
 
 defaultRoute.apply(event);
 ```
-Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, consider starting with
-the route that has a higher chance of being taken, since this might save you a few CPU cycles.
+
+Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, consider starting with the
+route that has a higher chance of being taken, since this might save you a few CPU cycles.
 
 ### AcceptAllFilter & NeutralFilter
 
