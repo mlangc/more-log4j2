@@ -4,3 +4,4 @@ target/
 *.class
 .java-version
 jmh-result.json
+*.versionsBackup

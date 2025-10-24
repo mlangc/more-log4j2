@@ -31,6 +31,7 @@ import java.net.URISyntaxException;
 public class TestHelpers {
     public static final TestException TEST_EXCEPTION = new TestException();
 
+    @SuppressWarnings("serial")
     public static class TestException extends RuntimeException {
         TestException() {
             super(null, null, true, false);
