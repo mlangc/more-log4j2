@@ -19,6 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
+import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
@@ -28,8 +29,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -60,7 +59,6 @@ class DebugLogThrottlingUseCaseTest {
 
     @Test
     void shouldThrottleLogsBasedOnMarkers() {
-        Executor executor = ForkJoinPool.commonPool();
         Runnable generateLogSpam = () -> {
             for (int i = 0; i < 1000; i++) {
                 log.debug("debug me tender");
@@ -69,7 +67,7 @@ class DebugLogThrottlingUseCaseTest {
         };
 
         var futures = IntStream.range(0, 4)
-                .mapToObj(ignore -> CompletableFuture.runAsync(generateLogSpam, executor))
+                .mapToObj(ignore -> CompletableFuture.runAsync(generateLogSpam))
                 .toList();
 
         assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));

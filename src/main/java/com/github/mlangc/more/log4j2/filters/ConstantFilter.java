@@ -29,16 +29,6 @@ import org.apache.logging.log4j.message.Message;
 
 public abstract class ConstantFilter extends AbstractLifeCycle implements Filter {
     @Override
-    public Result getOnMismatch() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Result getOnMatch() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public Result filter(Logger logger, Level level, Marker marker, String msg, Object... params) {
         return constantResult();
     }
@@ -111,6 +101,16 @@ public abstract class ConstantFilter extends AbstractLifeCycle implements Filter
     @Override
     public String toString() {
         return getClass().getSimpleName();
+    }
+
+    @Override
+    public Result getOnMatch() {
+        return constantResult();
+    }
+
+    @Override
+    public Result getOnMismatch() {
+        return constantResult();
     }
 
     protected abstract Result constantResult();

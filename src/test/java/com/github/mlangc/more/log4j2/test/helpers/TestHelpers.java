@@ -17,24 +17,27 @@
  * limitations under the License.
  * #L%
  */
-package com.github.mlangc.more.log4j2.filters;
+package com.github.mlangc.more.log4j2.test.helpers;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.message.Message;
 import org.apache.logging.log4j.message.SimpleMessage;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 
-class TestHelpers {
-    static final TestException TEST_EXCEPTION = new TestException();
+import java.net.URISyntaxException;
 
-    static class TestException extends RuntimeException {
+public class TestHelpers {
+    public static final TestException TEST_EXCEPTION = new TestException();
+
+    public static class TestException extends RuntimeException {
         TestException() {
             super(null, null, true, false);
         }
     }
 
-    static int logWithAllOverloads(ExtendedLogger log, Marker marker, String message) {
+    public static int logWithAllOverloads(ExtendedLogger log, Marker marker, String message) {
         var numLogs = 0;
 
         log.info(marker, message);
@@ -86,5 +89,14 @@ class TestHelpers {
         numLogs++;
 
         return numLogs;
+    }
+
+    public static LoggerContext loggerContextFromTestResource(String path) {
+        try {
+            var uri = LoggerContext.class.getClassLoader().getResource(path).toURI();
+            return LoggerContext.getContext(LoggerContext.class.getClassLoader(), false, uri);
+        } catch (URISyntaxException | NullPointerException e) {
+            throw new IllegalArgumentException("Error loading '" + path + "' from class path", e);
+        }
     }
 }

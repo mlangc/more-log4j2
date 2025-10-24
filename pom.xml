@@ -19,6 +19,8 @@
     </developers>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <jmh.version>1.37</jmh.version>
@@ -95,11 +97,6 @@
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.5.4</version>
-            </plugin>
-            <plugin>
-                <groupId>pw.krejci</groupId>
-                <artifactId>jmh-maven-plugin</artifactId>
-                <version>0.2.2</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -19,6 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
+import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import org.apache.logging.log4j.MarkerManager;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Filter.Result;
@@ -35,6 +36,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
 
 class ConstantFilterTest {
@@ -80,5 +82,14 @@ class ConstantFilterTest {
         log.debug(never, "test");
         log.info(never, "test");
         assertThat(countingAppender.currentCount()).isZero();
+    }
+
+    @ParameterizedTest
+    @MethodSource("testCases")
+    void onMatchAndOnMismatchShouldBeIdentical(TestCase testCase) {
+        assumeThat(testCase.filter).isInstanceOf(ConstantFilter.class);
+
+        assertThat(testCase.filter.getOnMatch()).isEqualTo(testCase.result);
+        assertThat(testCase.filter.getOnMismatch()).isEqualTo(testCase.result);
     }
 }

@@ -28,8 +28,9 @@ import org.apache.logging.log4j.core.test.junit.Named;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.github.mlangc.more.log4j2.filters.TestHelpers.logWithAllOverloads;
+import static com.github.mlangc.more.log4j2.test.helpers.TestHelpers.logWithAllOverloads;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 @LoggerContextSource("RoutingFilterTest.xml")
 class RoutingFilterTest {
@@ -149,4 +150,10 @@ class RoutingFilterTest {
                 .anySatisfy(evt -> assertThat(evt.getMessage().getFormattedMessage()).contains("appender stage"));
     }
 
+    @Test
+    void onMatchOrMismatchShouldThrow() {
+        var routingFilter = (RoutingFilter) loggerContext.getConfiguration().getFilter();
+        assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMatch);
+        assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMismatch);
+    }
 }

@@ -19,6 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
+import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
@@ -29,7 +30,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -63,7 +63,6 @@ class MarkerBasedLogThrottlingUseCaseTest {
 
     @Test
     void shouldThrottleLogsBasedOnMarkers() {
-        var executor = ForkJoinPool.commonPool();
         Runnable logTillStopped = () -> {
             for (int i = 0; i < 10_000; i++) {
                 log.info(THROTTLED_1, "at most once per second");
@@ -72,7 +71,7 @@ class MarkerBasedLogThrottlingUseCaseTest {
         };
 
         var futures = IntStream.range(0, 4)
-                .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped, executor))
+                .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped))
                 .toList();
 
         assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));

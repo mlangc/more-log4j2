@@ -287,4 +287,8 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
         return defaultFilterRoute.filter().filter(event);
     }
+
+    FilterRoute[] filterRoutes() {
+        return filterRoutes;
+    }
 }

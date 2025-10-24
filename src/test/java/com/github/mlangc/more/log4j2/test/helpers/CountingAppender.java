@@ -17,7 +17,7 @@
  * limitations under the License.
  * #L%
  */
-package com.github.mlangc.more.log4j2.filters;
+package com.github.mlangc.more.log4j2.test.helpers;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Filter;
@@ -34,7 +34,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
-@Plugin(name = "CountingAppender", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
+@Plugin(name = "CountingAppender", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE)
 public class CountingAppender extends AbstractAppender {
     private final LongAdder numEvents = new LongAdder();
     private final LongAdder numEventsWithoutMarker = new LongAdder();
@@ -62,23 +62,23 @@ public class CountingAppender extends AbstractAppender {
         return new CountingAppender(name);
     }
 
-    long currentCount() {
+    public long currentCount() {
         return numEvents.longValue();
     }
 
-    long currentCountWithoutMarker() {
+    public long currentCountWithoutMarker() {
         return numEventsWithoutMarker.longValue();
     }
 
-    Map<String, Long> currentCountsWithMarkers() {
+    public Map<String, Long> currentCountsWithMarkers() {
         return Collections.unmodifiableMap(numEventsWithMarker);
     }
 
-    Map<Level, Long> currentCountsWithLevels() {
+    public Map<Level, Long> currentCountsWithLevels() {
         return Collections.unmodifiableMap(numEventsWithLevel);
     }
 
-    void clear() {
+    public void clear() {
         numEvents.reset();
         numEventsWithoutMarker.reset();
         numEventsWithMarker.clear();

@@ -55,7 +55,7 @@ public class MarkerBasedThrottlingBenchmark {
         }
     }
 
-    static void main() throws RunnerException {
+    public static void main(String[] args) throws RunnerException {
         new Runner(new OptionsBuilder().resultFormat(ResultFormatType.JSON).build()).run();
     }
 

@@ -30,7 +30,7 @@ class MarkerBasedLogThrottlingDemo {
     public static final Marker THROTTLED_1 = MarkerFactory.getMarker("throttled1");
     public static final Marker THROTTLED_10 = MarkerFactory.getMarker("throttled10");
 
-    static void main() {
+    public static void main(String[] args) {
         for (int i = 0; i < 10000; i++) {
             LOG.info(THROTTLED_1, "something={}", i);
             LOG.info(THROTTLED_10, "something else={}", i);
