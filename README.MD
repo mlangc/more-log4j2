@@ -64,7 +64,7 @@ void anywhere() {
 #### Use Case II: Throttling DEBUG Logs
 
 Let's imagine that you want to enable `DEBUG` or `TRACE` logs, at least for parts your application or library code. At the same
-time, you want to be on the save side, and avoid log spam reliably. Then `RoutingFilter` can help you as follows:
+time, you want to be on the save side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
 
 ```xml
 
@@ -93,7 +93,7 @@ time, you want to be on the save side, and avoid log spam reliably. Then `Routin
 </Configuration>
 ```
 
-#### Reference
+#### RoutingFilter Reference Documentation
 
 `RoutingFilter` has no attributes, and is configured by its nested `FilterRoute` and `DefaultFilterRoute` elements:
 Each filter route must contain two child elements, `FilterRouteIf` and `FilterRouteThen` and both of them must contain filters
@@ -101,17 +101,32 @@ themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (note that 
 `FilterRouteThen` is taken and all remaining `FilterRoute` elements, as well as the mandatory `DefaultFilterRoute`
 are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
 
+In Java, the behaviour of the filter can be summarized as follows:
+
+```java
+for (var route : routes) {
+    if (route.matches(event)) {
+        route.apply(event);
+        return;
+    }
+}
+
+defaultRoute.apply(event);
+```
+Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, consider starting with
+the route that has a higher chance of being taken, since this might save you a few CPU cycles.
+
 ### AcceptAllFilter & NeutralFilter
 
 These two filters don't have any options, and always return either `ACCEPT` or `NEUTRAL`. They complement
 [DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2, and are
 especially useful in connection with `RoutingFilter`.
 
+## General Remarks
+
 ### Is that all?
 
 I have some additional ideas, but would like to start small, and collect some feedback first.
-
-## FAQ
 
 ### Why not extend log4j2 directly?
 
