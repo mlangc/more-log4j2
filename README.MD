@@ -122,7 +122,7 @@ These two filters don't have any options, and always return either `ACCEPT` or `
 [DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2, and are
 especially useful in connection with `RoutingFilter`.
 
-## General Remarks
+## Additional Notes
 
 ### Is that all?
 
