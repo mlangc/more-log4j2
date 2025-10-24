@@ -1,6 +1,8 @@
 # more-log4j2
+![Maven Central Version](https://img.shields.io/maven-central/v/com.github.mlangc/more-log4j2)
 
 A collection of plugins for log4j2.
+
 
 ## Features
 
