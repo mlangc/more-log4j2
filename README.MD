@@ -105,18 +105,20 @@ are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` ar
 In Java, the behaviour of the filter can be summarized as follows:
 
 ```java
-for(var route :routes){
-    if(route.matches(event)) {
-    route.apply(event);
-    return;
+for (var route : routes) {
+    if (route.matches(event)) {
+        route.apply(event);
+        return;
     }
 }
 
 defaultRoute.apply(event);
 ```
 
-Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, consider starting with the
-route that has a higher chance of being taken, since this might save you a few CPU cycles.
+Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, I'd suggest to use the
+order that makes your config the most readable. Putting the most commonly taken routes first might save you a few CPU cycles,
+however, apart from extreme cases, where millions of logs are filtered down to a handful of lines every second, this won't 
+make any difference.
 
 ### AcceptAllFilter & NeutralFilter
 

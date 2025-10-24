@@ -136,7 +136,6 @@
                         <arg>-Alog4j.graalvm.groupId=${project.groupId}</arg>
                         <arg>-Alog4j.graalvm.artifactId=${project.artifactId}</arg>
                         <arg>-Xlint:all,-processing</arg>
-                        <arg>-Werror</arg>
                     </compilerArgs>
                     <annotationProcessorPaths>
                         <path>

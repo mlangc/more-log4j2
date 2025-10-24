@@ -20,6 +20,23 @@
   -->
 
 <Configuration status="WARN">
+    <Filters>
+        <RoutingFilter>
+            <FilterRoute>
+                <FilterRouteIf>
+                    <ThresholdFilter level="info" onMismatch="ACCEPT" onMatch="DENY"/>
+                </FilterRouteIf>
+                <FilterRouteThen>
+                    <BurstFilter rate="1" maxBurst="2"/>
+                </FilterRouteThen>
+            </FilterRoute>
+
+            <DefaultFilterRoute>
+                <BurstFilter rate="2" maxBurst="5"/>
+            </DefaultFilterRoute>
+        </RoutingFilter>
+    </Filters>
+
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
@@ -28,14 +45,8 @@
     <Loggers>
         <Root level="info">
             <AppenderRef ref="Console"/>
-            <BurstFilter rate="5" maxBurst="5"/>
         </Root>
 
-        <Logger name="com.github.mlangc.more.log4j2.benchmarks.MarkerBasedThrottlingBenchmark">
-            <Filters>
-                <MarkerFilter marker="throttled" onMismatch="ACCEPT"/>
-                <BurstFilter rate="1" maxBurst="1"/>
-            </Filters>
-        </Logger>
+        <Logger name="com.github.mlangc.more.log4j2.benchmarks.DebugLogsThrottlingBenchmark" level="trace"/>
     </Loggers>
 </Configuration>
