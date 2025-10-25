@@ -7,7 +7,9 @@ A collection of plugins for log4j2.
 
 ### Routing Filter
 
-I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases:
+I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases, that go beyond what you can do with
+standard log4j2, unless you fall back to using [ScriptFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#Script),
+or write a plugin, as I did.
 
 #### Use Case I: Marker Based Log Throttling
 
