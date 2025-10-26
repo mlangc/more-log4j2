@@ -20,31 +20,29 @@
   -->
 
 <Configuration status="WARN">
-    <Filters>
-        <RoutingFilter>
-            <FilterRoute>
-                <FilterRouteIf>
-                    <MarkerFilter marker="throttled10" onMatch="ACCEPT"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <BurstFilter rate="10" maxBurst="20"/>
-                </FilterRouteThen>
-            </FilterRoute>
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="throttled10" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <BurstFilter rate="10" maxBurst="20"/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <FilterRoute>
-                <FilterRouteIf>
-                    <MarkerFilter marker="throttled1" onMatch="ACCEPT"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <BurstFilter rate="1" maxBurst="2"/>
-                </FilterRouteThen>
-            </FilterRoute>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="throttled1" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <BurstFilter rate="1" maxBurst="2"/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <DefaultFilterRoute>
-                <NeutralFilter/>
-            </DefaultFilterRoute>
-        </RoutingFilter>
-    </Filters>
+        <DefaultFilterRoute>
+            <NeutralFilter/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>

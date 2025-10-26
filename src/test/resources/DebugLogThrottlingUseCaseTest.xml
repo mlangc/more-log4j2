@@ -20,22 +20,20 @@
   -->
 
 <Configuration status="warn">
-    <Filters>
-        <RoutingFilter>
-            <FilterRoute>
-                <FilterRouteIf>
-                    <ThresholdFilter level="INFO" onMatch="ACCEPT"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <NeutralFilter/>
-                </FilterRouteThen>
-            </FilterRoute>
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <ThresholdFilter level="INFO" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <NeutralFilter/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <DefaultFilterRoute>
-                <BurstFilter rate="1" maxBurst="5"/>
-            </DefaultFilterRoute>
-        </RoutingFilter>
-    </Filters>
+        <DefaultFilterRoute>
+            <BurstFilter rate="1" maxBurst="5"/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level - %msg%n"/>

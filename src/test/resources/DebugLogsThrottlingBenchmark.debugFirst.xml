@@ -20,22 +20,20 @@
   -->
 
 <Configuration status="WARN">
-    <Filters>
-        <RoutingFilter>
-            <FilterRoute>
-                <FilterRouteIf>
-                    <ThresholdFilter level="info" onMismatch="ACCEPT" onMatch="DENY"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <BurstFilter rate="1" maxBurst="2"/>
-                </FilterRouteThen>
-            </FilterRoute>
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <ThresholdFilter level="info" onMismatch="ACCEPT" onMatch="DENY"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <BurstFilter rate="1" maxBurst="2"/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <DefaultFilterRoute>
-                <BurstFilter rate="2" maxBurst="5"/>
-            </DefaultFilterRoute>
-        </RoutingFilter>
-    </Filters>
+        <DefaultFilterRoute>
+            <BurstFilter rate="2" maxBurst="5"/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
 
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">

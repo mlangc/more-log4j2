@@ -18,31 +18,29 @@ After defining a global filter, like
 ```xml
 
 <Configuration status="warn">
-    <Filters>
-        <RoutingFilter>
-            <FilterRoute>
-                <FilterRouteIf>
-                    <MarkerFilter marker="throttled10" onMatch="ACCEPT"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <BurstFilter rate="10"/>
-                </FilterRouteThen>
-            </FilterRoute>
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="throttled10" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <BurstFilter rate="10"/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <FilterRoute>
-                <FilterRouteIf>
-                    <MarkerFilter marker="throttled1" onMatch="ACCEPT"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <BurstFilter rate="1"/>
-                </FilterRouteThen>
-            </FilterRoute>
+        <FilterRoute>
+            <FilterRouteIf>
+                <MarkerFilter marker="throttled1" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <BurstFilter rate="1"/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <DefaultFilterRoute>
-                <NeutralFilter/>
-            </DefaultFilterRoute>
-        </RoutingFilter>
-    </Filters>
+        <DefaultFilterRoute>
+            <NeutralFilter/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
     <!-- ... -->
     <!-- ... -->
     <!-- ... -->
@@ -72,24 +70,22 @@ want to be on the save side, and reliably avoid log spam. Then `RoutingFilter` c
 ```xml
 
 <Configuration status="warn">
-    <Filters>
-        <RoutingFilter>
-            <FilterRoute>
-                <FilterRouteIf>
-                    <ThresholdFilter level="info" onMatch="ACCEPT"/>
-                </FilterRouteIf>
-                <FilterRouteThen>
-                    <!-- No special handling for INFO and above -->
-                    <NeutralFilter/>
-                </FilterRouteThen>
-            </FilterRoute>
+    <RoutingFilter>
+        <FilterRoute>
+            <FilterRouteIf>
+                <ThresholdFilter level="info" onMatch="ACCEPT"/>
+            </FilterRouteIf>
+            <FilterRouteThen>
+                <!-- No special handling for INFO and above -->
+                <NeutralFilter/>
+            </FilterRouteThen>
+        </FilterRoute>
 
-            <DefaultFilterRoute>
-                <!-- DEBUG and TRACE logs are handled here -->
-                <BurstFilter rate="1"/>
-            </DefaultFilterRoute>
-        </RoutingFilter>
-    </Filters>
+        <DefaultFilterRoute>
+            <!-- DEBUG and TRACE logs are handled here -->
+            <BurstFilter rate="1"/>
+        </DefaultFilterRoute>
+    </RoutingFilter>
     <!-- ... -->
     <!-- ... -->
     <!-- ... -->
