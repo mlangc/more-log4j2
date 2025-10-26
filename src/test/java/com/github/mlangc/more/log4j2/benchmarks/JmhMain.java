@@ -31,6 +31,7 @@ public class JmhMain {
         new Runner(new OptionsBuilder()
                 .resultFormat(ResultFormatType.JSON)
                 .include(Pattern.quote(BurstFilterVsSystemNanoTimeBenchmark.class.getSimpleName()))
+                .addProfiler("jfr")
                 .build()).run();
     }
 }

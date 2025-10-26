@@ -46,11 +46,6 @@ public class BurstFilterVsSystemNanoTimeBenchmark {
     }
 
     @Benchmark
-    public void debug() {
-        log.debug("test");
-    }
-
-    @Benchmark
     public void info() {
         log.info("test");
     }
