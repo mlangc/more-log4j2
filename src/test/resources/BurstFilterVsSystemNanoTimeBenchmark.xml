@@ -20,39 +20,15 @@
   -->
 
 <Configuration status="WARN">
-    <RoutingFilter>
-        <FilterRoute>
-            <FilterRouteIf>
-                <MarkerFilter marker="throttled10" onMatch="ACCEPT"/>
-            </FilterRouteIf>
-            <FilterRouteThen>
-                <BurstFilter rate="10"/>
-            </FilterRouteThen>
-        </FilterRoute>
-
-        <FilterRoute>
-            <FilterRouteIf>
-                <MarkerFilter marker="throttled1" onMatch="ACCEPT"/>
-            </FilterRouteIf>
-            <FilterRouteThen>
-                <BurstFilter rate="1"/>
-            </FilterRouteThen>
-        </FilterRoute>
-
-        <DefaultFilterRoute>
-            <NeutralFilter/>
-        </DefaultFilterRoute>
-    </RoutingFilter>
+    <BurstFilter rate="1" maxBurst="1"/>
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level - %msg%n"/>
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
         </Console>
-        <CountingAppender name="CountingAppender"/>
     </Appenders>
     <Loggers>
         <Root level="info">
             <AppenderRef ref="Console"/>
-            <AppenderRef ref="CountingAppender"/>
         </Root>
     </Loggers>
 </Configuration>

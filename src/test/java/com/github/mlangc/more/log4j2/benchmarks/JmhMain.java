@@ -30,7 +30,7 @@ public class JmhMain {
     public static void main(String[] args) throws RunnerException {
         new Runner(new OptionsBuilder()
                 .resultFormat(ResultFormatType.JSON)
-                .include(Pattern.quote(DebugLogsThrottlingBenchmark.class.getSimpleName()))
+                .include(Pattern.quote(BurstFilterVsSystemNanoTimeBenchmark.class.getSimpleName()))
                 .build()).run();
     }
 }
