@@ -5,3 +5,4 @@ target/
 .java-version
 jmh-result.json
 *.versionsBackup
+*.iml
