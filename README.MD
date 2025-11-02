@@ -3,6 +3,11 @@
 
 A collection of plugins for log4j2.
 
+## Installation
+
+This library is available [on Maven Central](https://central.sonatype.com/artifact/com.github.mlangc/more-log4j2?smo=true) under
+the coordinates `com.github.mlangc:more-log4j2`.
+
 ## Features
 
 ### Routing Filter
@@ -132,8 +137,9 @@ I have some additional ideas, but would like to start small, and collect some fe
 
 ### Why not extend log4j2 directly?
 
-My plan is to migrate the most useful parts of this library to mainline log4j2 if possible. However, before bothering the log4j2
-maintainers with my ideas, I'd like to experiment and collect some feedback.
+My plan is to migrate the most useful parts of this library to mainline log4j2 at some point. However, log4j2 accepts new plugins
+only if they have demonstrated long-term stability and have a broad user base. Please
+see [this discussion](https://github.com/apache/logging-log4j2/discussions/3976) for details.
 
 ### License
 
