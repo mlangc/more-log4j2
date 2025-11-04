@@ -58,7 +58,7 @@ public class MarkerBasedThrottlingBenchmark {
 
         @Setup
         public void setup() {
-            var rng = new Random(0);
+            Random rng = new Random(0);
 
             for (int j = 0; j < NUM_BITS; j++) {
                 throttledBits.set(j, rng.nextDouble() < throttledFraction);

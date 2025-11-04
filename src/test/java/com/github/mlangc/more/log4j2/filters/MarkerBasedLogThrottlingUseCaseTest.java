@@ -29,8 +29,11 @@ import org.apache.logging.log4j.core.test.junit.Named;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,14 +73,14 @@ class MarkerBasedLogThrottlingUseCaseTest {
             }
         };
 
-        var futures = IntStream.range(0, 4)
+        List<CompletableFuture<Void>> futures = IntStream.range(0, 4)
                 .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped))
-                .toList();
+                .collect(Collectors.toList());
 
         assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
         assertThat(countingAppender.currentCountWithoutMarker()).isZero();
 
-        var countsWithMarker = countingAppender.currentCountsWithMarkers();
+        Map<String, Long> countsWithMarker = countingAppender.currentCountsWithMarkers();
         assertThat(countsWithMarker.getOrDefault(THROTTLED_1.getName(), 0L))
                 .isNotZero()
                 .isLessThan(countsWithMarker.getOrDefault(THROTTLED_10.getName(), 0L));

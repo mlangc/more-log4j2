@@ -23,7 +23,6 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configurator;
 import org.openjdk.jmh.annotations.*;
-import org.openjdk.jmh.runner.RunnerException;
 
 import java.util.BitSet;
 import java.util.Random;
@@ -55,7 +54,7 @@ public class DebugLogsThrottlingBenchmark {
 
         @Setup
         public void setup() {
-            var rng = new Random(0);
+            Random rng = new Random(0);
 
             for (int j = 0; j < NUM_BITS; j++) {
                 debugBits.set(j, rng.nextDouble() < debugFraction);
@@ -90,8 +89,8 @@ public class DebugLogsThrottlingBenchmark {
         }
     }
 
-    public static void main(String[] args) throws RunnerException {
-        var state = new DebugFirstBenchmarkState();
+    public static void main(String[] args) {
+        DebugFirstBenchmarkState state = new DebugFirstBenchmarkState();
         state.debugFraction = 0.5;
         state.setup();
 

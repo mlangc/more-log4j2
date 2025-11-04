@@ -26,6 +26,7 @@ import org.apache.logging.log4j.message.Message;
 import org.apache.logging.log4j.message.SimpleMessage;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 
+import java.net.URI;
 import java.net.URISyntaxException;
 
 public class TestHelpers {
@@ -39,7 +40,7 @@ public class TestHelpers {
     }
 
     public static int logWithAllOverloads(ExtendedLogger log, Marker marker, String message) {
-        var numLogs = 0;
+        int numLogs = 0;
 
         log.info(marker, message);
         numLogs++;
@@ -94,7 +95,7 @@ public class TestHelpers {
 
     public static LoggerContext loggerContextFromTestResource(String path) {
         try {
-            var uri = LoggerContext.class.getClassLoader().getResource(path).toURI();
+            URI uri = LoggerContext.class.getClassLoader().getResource(path).toURI();
             return LoggerContext.getContext(LoggerContext.class.getClassLoader(), false, uri);
         } catch (URISyntaxException | NullPointerException e) {
             throw new IllegalArgumentException("Error loading '" + path + "' from class path", e);

@@ -21,10 +21,12 @@ package com.github.mlangc.more.log4j2.filters;
 
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
+import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
 import org.apache.logging.log4j.core.test.junit.Named;
+import org.apache.logging.log4j.spi.ExtendedLogger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -60,9 +62,9 @@ class RoutingFilterTest {
 
     @Test
     void logsWithoutMarkersShouldNotBeFiltered() {
-        var log = loggerContext.getLogger(getClass());
+        ExtendedLogger log = loggerContext.getLogger(getClass());
 
-        var numLogs = logWithAllOverloads(log, null, "boring");
+        int numLogs = logWithAllOverloads(log, null, "boring");
         assertThat(throttledListAppender.getEvents())
                 .hasSize(numLogs)
                 .allSatisfy(evt -> assertThat(evt.getMessage().getFormattedMessage()).contains("boring"));
@@ -70,9 +72,9 @@ class RoutingFilterTest {
 
     @Test
     void logsForColoredLoggerShouldBeFilteredBasedOnTheirColorMarker() {
-        var log = loggerContext.getLogger(getClass().getCanonicalName() + ".Colored");
+        Logger log = loggerContext.getLogger(getClass().getCanonicalName() + ".Colored");
 
-        var logLines = logWithAllOverloads(log, RED, "red lips");
+        int logLines = logWithAllOverloads(log, RED, "red lips");
         logLines += logWithAllOverloads(log, RED, "red lips");
         logLines += logWithAllOverloads(log, GREEN, "green grass");
         logLines += logWithAllOverloads(log, BLUE, "blue sky");
@@ -100,9 +102,9 @@ class RoutingFilterTest {
 
     @Test
     void logsForStdLoggerShouldNotBeFilteredBasedOnTheirColorMarker() {
-        var log = loggerContext.getLogger(getClass());
+        ExtendedLogger log = loggerContext.getLogger(getClass());
 
-        var logLines = logWithAllOverloads(log, RED, "blue lips");
+        int logLines = logWithAllOverloads(log, RED, "blue lips");
         logLines += logWithAllOverloads(log, GREEN, "brown grass");
         logLines += logWithAllOverloads(log, BLUE, "red sky");
         logLines += logWithAllOverloads(log, YELLOW, "blue submarine");
@@ -114,9 +116,9 @@ class RoutingFilterTest {
 
     @Test
     void logsWithTopLevelMarkersShouldBeFilteredIfNotContainingTop() {
-        var log = loggerContext.getLogger(getClass());
+        ExtendedLogger log = loggerContext.getLogger(getClass());
 
-        var logLines = logWithAllOverloads(log, TOP_LEVEL, "top gun");
+        int logLines = logWithAllOverloads(log, TOP_LEVEL, "top gun");
         logWithAllOverloads(log, TOP_LEVEL, "nakte kanone");
         assertThat(throttledListAppender.getEvents())
                 .filteredOn(evt -> evt.getMarker().isInstanceOf(TOP_LEVEL))
@@ -126,9 +128,9 @@ class RoutingFilterTest {
 
     @Test
     void logsWithAppenderCtlMarkersShouldBeFilteredIfNotContainingAppenderControl() {
-        var log = loggerContext.getLogger(getClass());
+        ExtendedLogger log = loggerContext.getLogger(getClass());
 
-        var logLines = logWithAllOverloads(log, APPENDER_CTL, "appender control");
+        int logLines = logWithAllOverloads(log, APPENDER_CTL, "appender control");
         logWithAllOverloads(log, APPENDER_CTL, "out of control");
 
         assertThat(throttledListAppender.getEvents())
@@ -139,9 +141,9 @@ class RoutingFilterTest {
 
     @Test
     void logsWithAppenderMarkersShouldBeFilteredIfNotContainingAppenderStage() {
-        var log = loggerContext.getLogger(getClass());
+        ExtendedLogger log = loggerContext.getLogger(getClass());
 
-        var logLines = logWithAllOverloads(log, APPENDER, "appender stage");
+        int logLines = logWithAllOverloads(log, APPENDER, "appender stage");
         logWithAllOverloads(log, APPENDER, "back stage");
 
         assertThat(throttledListAppender.getEvents())
@@ -152,7 +154,7 @@ class RoutingFilterTest {
 
     @Test
     void onMatchOrMismatchShouldThrow() {
-        var routingFilter = (RoutingFilter) loggerContext.getConfiguration().getFilter();
+        RoutingFilter routingFilter = (RoutingFilter) loggerContext.getConfiguration().getFilter();
         assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMatch);
         assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMismatch);
     }

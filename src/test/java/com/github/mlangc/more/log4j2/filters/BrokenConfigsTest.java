@@ -37,7 +37,7 @@ class BrokenConfigsTest {
             "BrokenConfigsTest.routingFilterWithEmptyDefaultFilterRoute.xml",
     })
     void brokenRoutingFiltersShouldNotBeInitialized(String configPath) {
-        try (var context = TestHelpers.loggerContextFromTestResource(configPath)) {
+        try (org.apache.logging.log4j.core.LoggerContext context = TestHelpers.loggerContextFromTestResource(configPath)) {
             assertThat(context.getConfiguration().getFilter())
                     .isInstanceOfSatisfying(CompositeFilter.class, f -> assertThat(f.getFiltersArray()).isEmpty());
         }
@@ -51,11 +51,11 @@ class BrokenConfigsTest {
             "BrokenConfigsTest.routingFilterWithSingleBrokenFilterRoute3.xml"
     })
     void singleBrokenRoutingFilterRouteShouldNotBeInitialized(String configPath) {
-        try (var context = TestHelpers.loggerContextFromTestResource(configPath)) {
-            var compositeFilter = (CompositeFilter) context.getConfiguration().getFilter();
+        try (org.apache.logging.log4j.core.LoggerContext context = TestHelpers.loggerContextFromTestResource(configPath)) {
+            CompositeFilter compositeFilter = (CompositeFilter) context.getConfiguration().getFilter();
             assertThat(compositeFilter.getFiltersArray()).hasSize(1);
 
-            var routingFilter = (RoutingFilter) compositeFilter.getFiltersArray()[0];
+            RoutingFilter routingFilter = (RoutingFilter) compositeFilter.getFiltersArray()[0];
             assertThat(routingFilter.filterRoutes()).isEmpty();
         }
     }
@@ -63,10 +63,10 @@ class BrokenConfigsTest {
     @Test
     @LoggerContextSource("BrokenConfigsTest.routingFilterWithBrokenAndWorkingFilterRoute.xml")
     void brokenRoutingFilterRouteShouldNotBeInitializedButNotKeepOkRouteFromBeingUsed(Configuration configuration) {
-        var compositeFilter = (CompositeFilter) configuration.getFilter();
+        CompositeFilter compositeFilter = (CompositeFilter) configuration.getFilter();
         assertThat(compositeFilter.getFiltersArray()).hasSize(1);
 
-        var routingFilter = (RoutingFilter) compositeFilter.getFiltersArray()[0];
+        RoutingFilter routingFilter = (RoutingFilter) compositeFilter.getFiltersArray()[0];
         assertThat(routingFilter.filterRoutes()).hasSize(1);
     }
 

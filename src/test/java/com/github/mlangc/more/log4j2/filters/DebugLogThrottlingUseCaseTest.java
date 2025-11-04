@@ -28,8 +28,11 @@ import org.apache.logging.log4j.core.test.junit.Named;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,13 +69,13 @@ class DebugLogThrottlingUseCaseTest {
             }
         };
 
-        var futures = IntStream.range(0, 4)
+        List<CompletableFuture<Void>> futures = IntStream.range(0, 4)
                 .mapToObj(ignore -> CompletableFuture.runAsync(generateLogSpam))
-                .toList();
+                .collect(Collectors.toList());
 
         assertThat(futures).allSatisfy(f -> assertThat(f).succeedsWithin(1, TimeUnit.SECONDS));
 
-        var countsWithLevel = countingAppender.currentCountsWithLevels();
+        Map<Level, Long> countsWithLevel = countingAppender.currentCountsWithLevels();
         assertThat(countsWithLevel.get(Level.DEBUG))
                 .as("countsWithLevel=%s", countsWithLevel)
                 .isLessThan(countsWithLevel.getOrDefault(Level.INFO, 0L));

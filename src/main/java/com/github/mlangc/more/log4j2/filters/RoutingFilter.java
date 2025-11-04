@@ -33,6 +33,7 @@ import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.message.Message;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
 
@@ -42,22 +43,54 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
     private final FilterRoute[] filterRoutes;
 
     @Plugin(name = "DefaultFilterRoute", category = Node.CATEGORY)
-    public record DefaultFilterRoute(Filter filter) {
-        public DefaultFilterRoute {
+    public static final class DefaultFilterRoute {
+        private final Filter filter;
+
+        public DefaultFilterRoute(Filter filter) {
             requireNonNull(filter);
+            this.filter = filter;
         }
 
         @PluginFactory
         public static DefaultFilterRoute create(@PluginElement("DefaultFilterRoute") Filter filter) {
             return new DefaultFilterRoute(filter);
         }
+
+        public Filter filter() {
+            return filter;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) return true;
+            if (obj == null || obj.getClass() != this.getClass()) return false;
+            DefaultFilterRoute that = (DefaultFilterRoute) obj;
+            return Objects.equals(this.filter, that.filter);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(filter);
+        }
+
+        @Override
+        public String toString() {
+            return "DefaultFilterRoute[" +
+                   "filter=" + filter + ']';
+        }
+
     }
 
     @Plugin(name = "FilterRoute", category = Node.CATEGORY, printObject = true)
-    public record FilterRoute(FilterRouteIf filterRouteIf, FilterRouteThen filterRouteThen) {
-        public FilterRoute {
+    public static final class FilterRoute {
+        private final FilterRouteIf filterRouteIf;
+        private final FilterRouteThen filterRouteThen;
+
+        public FilterRoute(FilterRouteIf filterRouteIf, FilterRouteThen filterRouteThen) {
             requireNonNull(filterRouteIf);
             requireNonNull(filterRouteThen);
+            this.filterRouteIf = filterRouteIf;
+            this.filterRouteThen = filterRouteThen;
         }
 
         @PluginFactory
@@ -66,30 +99,114 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
                 @PluginElement("FilterRouteThen") FilterRouteThen filterRouteThen) {
             return new FilterRoute(filterRouteIf, filterRouteThen);
         }
+
+        public FilterRouteIf filterRouteIf() {
+            return filterRouteIf;
+        }
+
+        public FilterRouteThen filterRouteThen() {
+            return filterRouteThen;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) return true;
+            if (obj == null || obj.getClass() != this.getClass()) return false;
+            FilterRoute that = (FilterRoute) obj;
+            return Objects.equals(this.filterRouteIf, that.filterRouteIf) &&
+                   Objects.equals(this.filterRouteThen, that.filterRouteThen);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(filterRouteIf, filterRouteThen);
+        }
+
+        @Override
+        public String toString() {
+            return "FilterRoute[" +
+                   "filterRouteIf=" + filterRouteIf + ", " +
+                   "filterRouteThen=" + filterRouteThen + ']';
+        }
+
     }
 
     @Plugin(name = "FilterRouteIf", category = Node.CATEGORY, printObject = true)
-    public record FilterRouteIf(Filter filter) {
-        public FilterRouteIf {
+    public static final class FilterRouteIf {
+        private final Filter filter;
+
+        public FilterRouteIf(Filter filter) {
             requireNonNull(filter);
+            this.filter = filter;
         }
 
         @PluginFactory
         public static FilterRouteIf create(@PluginElement("FilterRouteIf") Filter filter) {
             return new FilterRouteIf(filter);
         }
+
+        public Filter filter() {
+            return filter;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) return true;
+            if (obj == null || obj.getClass() != this.getClass()) return false;
+            FilterRouteIf that = (FilterRouteIf) obj;
+            return Objects.equals(this.filter, that.filter);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(filter);
+        }
+
+        @Override
+        public String toString() {
+            return "FilterRouteIf[" +
+                   "filter=" + filter + ']';
+        }
+
     }
 
     @Plugin(name = "FilterRouteThen", category = Node.CATEGORY, printObject = true)
-    public record FilterRouteThen(Filter filter) {
-        public FilterRouteThen {
+    public static final class FilterRouteThen {
+        private final Filter filter;
+
+        public FilterRouteThen(Filter filter) {
             requireNonNull(filter);
+            this.filter = filter;
         }
 
         @PluginFactory
         public static FilterRouteThen create(@PluginElement("FilterRouteThen") Filter filter) {
             return new FilterRouteThen(filter);
         }
+
+        public Filter filter() {
+            return filter;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) return true;
+            if (obj == null || obj.getClass() != this.getClass()) return false;
+            FilterRouteThen that = (FilterRouteThen) obj;
+            return Objects.equals(this.filter, that.filter);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(filter);
+        }
+
+        @Override
+        public String toString() {
+            return "FilterRouteThen[" +
+                   "filter=" + filter + ']';
+        }
+
     }
 
     public RoutingFilter(DefaultFilterRoute defaultFilterRoute, FilterRoute[] filterRoutes) {
