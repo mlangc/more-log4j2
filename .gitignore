@@ -6,3 +6,4 @@ target/
 jmh-result.json
 *.versionsBackup
 *.iml
+release.properties
