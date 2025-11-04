@@ -7,3 +7,6 @@ jmh-result.json
 *.versionsBackup
 *.iml
 release.properties
+pom.xml.next
+pom.xml.releaseBackup
+pom.xml.tag
