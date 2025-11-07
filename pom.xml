@@ -50,6 +50,12 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-junit5-plugin</artifactId>
+            <version>1.2.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-api</artifactId>
         </dependency>
@@ -66,11 +72,6 @@
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core-test</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.pitest</groupId>
-            <artifactId>pitest-junit5-plugin</artifactId>
-            <version>1.2.3</version>
         </dependency>
         <dependency>
             <groupId>org.openjdk.jmh</groupId>

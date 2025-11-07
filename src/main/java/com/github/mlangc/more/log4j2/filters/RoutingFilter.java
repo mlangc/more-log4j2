@@ -33,7 +33,6 @@ import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.message.Message;
 
 import java.util.Arrays;
-import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
 
@@ -61,24 +60,10 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
         }
 
         @Override
-        public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj == null || obj.getClass() != this.getClass()) return false;
-            DefaultFilterRoute that = (DefaultFilterRoute) obj;
-            return Objects.equals(this.filter, that.filter);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(filter);
-        }
-
-        @Override
         public String toString() {
             return "DefaultFilterRoute[" +
                    "filter=" + filter + ']';
         }
-
     }
 
     @Plugin(name = "FilterRoute", category = Node.CATEGORY, printObject = true)
@@ -109,20 +94,6 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
         }
 
         @Override
-        public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj == null || obj.getClass() != this.getClass()) return false;
-            FilterRoute that = (FilterRoute) obj;
-            return Objects.equals(this.filterRouteIf, that.filterRouteIf) &&
-                   Objects.equals(this.filterRouteThen, that.filterRouteThen);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(filterRouteIf, filterRouteThen);
-        }
-
-        @Override
         public String toString() {
             return "FilterRoute[" +
                    "filterRouteIf=" + filterRouteIf + ", " +
@@ -150,19 +121,6 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
         }
 
         @Override
-        public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj == null || obj.getClass() != this.getClass()) return false;
-            FilterRouteIf that = (FilterRouteIf) obj;
-            return Objects.equals(this.filter, that.filter);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(filter);
-        }
-
-        @Override
         public String toString() {
             return "FilterRouteIf[" +
                    "filter=" + filter + ']';
@@ -186,19 +144,6 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
         public Filter filter() {
             return filter;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj == null || obj.getClass() != this.getClass()) return false;
-            FilterRouteThen that = (FilterRouteThen) obj;
-            return Objects.equals(this.filter, that.filter);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(filter);
         }
 
         @Override
