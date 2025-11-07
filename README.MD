@@ -6,7 +6,7 @@ A collection of plugins for log4j2.
 ## Installation
 
 This library is available [on Maven Central](https://central.sonatype.com/artifact/com.github.mlangc/more-log4j2?smo=true) under
-the coordinates `com.github.mlangc:more-log4j2`.
+the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at least Java 8.
 
 ## Features
 
