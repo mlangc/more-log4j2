@@ -69,10 +69,4 @@ class BrokenConfigsTest {
         RoutingFilter routingFilter = (RoutingFilter) compositeFilter.getFiltersArray()[0];
         assertThat(routingFilter.filterRoutes()).hasSize(1);
     }
-
-    @Test
-    @LoggerContextSource("BrokenConfigsTest.filtersWithIllegalOnMatchOnMismatch.xml")
-    void constantAndRoutingFilterShouldNotAllowSettingOnMatchOrMismatch(Configuration configuration) {
-
-    }
 }
