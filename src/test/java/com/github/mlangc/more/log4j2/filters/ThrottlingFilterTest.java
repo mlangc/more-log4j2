@@ -29,14 +29,17 @@ import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
+import org.apache.logging.log4j.core.test.junit.Named;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,55 +54,114 @@ class ThrottlingFilterTest {
         MutableLong ticker = new MutableLong();
         ThrottlingFilter filter = new ThrottlingFilter(Result.ACCEPT, Result.DENY, Level.WARN, intervalNanos, maxEventPerInterval, ticker::getValue);
 
-        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.DENY);
+        assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "throttled")).isEqualTo(Result.DENY);
 
-        assertThat(filter.filter(LOG, Level.WARN, null, "test", (Object) null)).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.WARN, null, "test", null, null)).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.WARN, null, "test", null, null, null)).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.WARN, null, "test", null, null, null, null)).isEqualTo(Result.ACCEPT);
-        assertThat(filter.filter(LOG, Level.INFO, null, "test", null, null, null, null, null)).isEqualTo(Result.DENY);
+        assertThat(filter.filter(LOG, Level.ERROR, null, "not throttled", (Object) null)).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.ERROR, null, "not throttled", null, null)).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.ERROR, null, "not throttled", null, null, null)).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.ERROR, null, "not throttled", null, null, null, null)).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "throttled", null, null, null, null, null)).isEqualTo(Result.DENY);
 
         ticker.add(TimeUnit.SECONDS.toNanos(1));
-        assertThat(filter.filter(LOG, Level.INFO, null, "test", null, null, null, null, null, null)).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "not throttled", null, null, null, null, null, null)).isEqualTo(Result.ACCEPT);
+    }
+
+    @Test
+    void shouldBehaveProperlyIfCalledWithAllOverloadsAndFakeTicker() {
+        long intervalNanos = TimeUnit.SECONDS.toNanos(1);
+        long maxEventPerInterval = 3;
+        MutableLong ticker = new MutableLong();
+        ThrottlingFilter filter = new ThrottlingFilter(Result.ACCEPT, Result.DENY, Level.WARN, intervalNanos, maxEventPerInterval, ticker::getValue);
+
+        Map<Result, Integer> results = TestHelpers.filterWithAllOverloads(filter, LOG, Level.INFO, null, "test");
+        assertThat(results).hasEntrySatisfying(Result.ACCEPT, v -> assertThat(v).isEqualTo(3));
+
+        results = TestHelpers.filterWithAllOverloads(filter, LOG, Level.INFO, null, "test");
+        assertThat(results).hasEntrySatisfying(Result.ACCEPT, v -> assertThat(v).isZero());
+
+        ticker.add(intervalNanos);
+
+        results = TestHelpers.filterWithAllOverloads(filter, LOG, Level.INFO, null, "test");
+        assertThat(results).hasEntrySatisfying(Result.ACCEPT, v -> assertThat(v).isEqualTo(3));
+
+        results = TestHelpers.filterWithAllOverloads(filter, LOG, Level.ERROR, null, "test");
+        assertThat(results).hasEntrySatisfying(Result.DENY, v -> assertThat(v).isZero());
     }
 
     @ParameterizedTest
     @ValueSource(ints = {1, 2, 4, 8})
-    void shouldResultInExpectedNumberOfLogsWithSampleConfig(int parallelism) throws InterruptedException {
-        try (LoggerContext context = TestHelpers.loggerContextFromTestResource(ThrottlingFilterTest.class.getSimpleName() + ".xml")) {
+    void shouldThrottleExcessiveLogsFromMultipleThreads(int parallelism) throws InterruptedException {
+        try (LoggerContext context = TestHelpers.loggerContextFromTestResource(ThrottlingFilterTest.class.getSimpleName() + ".allowMany.xml")) {
+            Configuration config = context.getConfiguration();
+            ThrottlingFilter filter = (ThrottlingFilter) config.getFilter();
+
             ExtendedLogger log = context.getLogger(getClass());
             AtomicBoolean stop = new AtomicBoolean();
+            AtomicLong startedAt = new AtomicLong(Long.MAX_VALUE);
+            AtomicLong stoppedAt = new AtomicLong(Long.MIN_VALUE);
 
             Runnable logTillStopped = () -> {
+                long startedNanos = System.nanoTime();
+                startedAt.updateAndGet(t -> Math.min(t, startedNanos));
                 while (!stop.get()) {
                     TestHelpers.logWithAllOverloads(log, null, "not yet stopped");
                 }
+
+                long stoppedNanos = System.nanoTime();
+                stoppedAt.updateAndGet(t -> Math.max(t, stoppedNanos));
             };
 
-            long t0 = System.nanoTime();
             CompletableFuture<?>[] futures = IntStream.range(0, parallelism)
                     .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped))
                     .toArray(CompletableFuture<?>[]::new);
 
-            Thread.sleep(10);
+            long intervalNanos = filter.intervalNanos();
+            Thread.sleep(TimeUnit.NANOSECONDS.toMillis(intervalNanos * 10) + 1);
             stop.set(true);
             assertThat(CompletableFuture.allOf(futures)).succeedsWithin(1, TimeUnit.SECONDS);
-            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) ;
+
+            long startedIntervals = (stoppedAt.get() - startedAt.get() + intervalNanos - 1) / intervalNanos;
+            long maxLogs = startedIntervals * filter.maxEvents();
 
             CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
-
             assertThat(countingAppender.currentCount())
-                    .isLessThan(elapsedMillis + 1)
-                    .isGreaterThanOrEqualTo(elapsedMillis);
+                    .isLessThanOrEqualTo(maxLogs);
         }
+    }
+    @Test
+    @LoggerContextSource("ThrottlingFilterTest.atLogger.allowFew.xml")
+    void shouldThrottleLogsFromSingleThreadWithFilterAtLogger(LoggerContext context, @Named("CountingAppender") CountingAppender countingAppender) throws InterruptedException {
+        Configuration config = context.getConfiguration();
+        ThrottlingFilter filter = (ThrottlingFilter) config.getRootLogger().getFilter();
+        ExtendedLogger log = context.getLogger(getClass());
+        long intervalMillis = TimeUnit.NANOSECONDS.toMillis(filter.intervalNanos());
+
+        TestHelpers.logWithAllOverloads(log, null, "one");
+        TestHelpers.logWithAllOverloads(log, null, "two");
+        assertThat(countingAppender.currentCount()).isOne();
+
+        Thread.sleep(intervalMillis + 1);
+        TestHelpers.logWithAllOverloads(log, null, "three");
+        assertThat(countingAppender.currentCount()).isEqualTo(2);
     }
 
     @Test
-    @LoggerContextSource("ThrottlingFilterTest.xml")
-    void shouldLoadFilterFromSampleConfig(Configuration configuration) {
-        assertThat(configuration.getFilter()).isInstanceOf(ThrottlingFilter.class);
+    @LoggerContextSource("ThrottlingFilterTest.topLevel.allowFew.xml")
+    void shouldThrottleLogsFromSingleThread(LoggerContext context, @Named("CountingAppender") CountingAppender countingAppender) throws InterruptedException {
+        Configuration config = context.getConfiguration();
+        ThrottlingFilter filter = (ThrottlingFilter) config.getFilter();
+        ExtendedLogger log = context.getLogger(getClass());
+        long intervalMillis = TimeUnit.NANOSECONDS.toMillis(filter.intervalNanos());
+
+        TestHelpers.logWithAllOverloads(log, null, "one");
+        TestHelpers.logWithAllOverloads(log, null, "two");
+        assertThat(countingAppender.currentCount()).isOne();
+
+        Thread.sleep(intervalMillis + 1);
+        TestHelpers.logWithAllOverloads(log, null, "three");
+        assertThat(countingAppender.currentCount()).isEqualTo(2);
     }
 }

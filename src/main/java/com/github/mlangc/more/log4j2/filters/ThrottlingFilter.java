@@ -33,6 +33,7 @@ import org.apache.logging.log4j.message.Message;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static java.util.Objects.requireNonNull;
 
@@ -42,6 +43,9 @@ public class ThrottlingFilter extends AbstractFilter {
     private final long intervalNanos;
     private final long maxEvents;
     private final Ticker ticker;
+
+    private final AtomicLong startTicks;
+    private final AtomicLong eventCounter;
 
     ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEvents) {
         this(onMatch, onMismatch, level, intervalNanos, maxEvents, Ticker.SYSTEM);
@@ -54,6 +58,8 @@ public class ThrottlingFilter extends AbstractFilter {
         this.intervalNanos = intervalNanos;
         this.maxEvents = maxEventsPerInterval;
         this.ticker = ticker;
+        this.startTicks = new AtomicLong(ticker.currentTicks());
+        this.eventCounter = new AtomicLong();
     }
 
     @Override
@@ -150,10 +156,43 @@ public class ThrottlingFilter extends AbstractFilter {
 
     private Result filter(Level level) {
         if (this.level.isMoreSpecificThan(level)) {
-            return onMismatch;
+            long t = ticker.currentTicks();
+
+            while (true) {
+                long t0 = startTicks.get();
+                if (t0 + intervalNanos > t) {
+                    return eventCounter.incrementAndGet() <= maxEvents ? onMatch : onMismatch;
+                }
+
+                long intoNewInterval = (t - t0) % intervalNanos;
+                long newStartTicks = t - intoNewInterval;
+                if (startTicks.weakCompareAndSet(t0, newStartTicks)) {
+                    // Note: This is a racy update, since another thread might have booked events
+                    // after the compare and set above but before the set below. These events would then
+                    // never be accounted for, leading to the filter to accept more logs than it actually
+                    // should. However, note that the chance of this happening is very small, and even if it
+                    // does, the filter will only accept a few additional logs that it would have otherwise
+                    // rejected. Fixing this race on the other hand, would require us to tread both startTicks
+                    // and eventCounter as a single atomic unit. This could be accomplished by putting them
+                    // into a State class, and by replacing the two AtomicLongs with a single AtomicReference<State>.
+                    // This would churn State objects though, for every invocation of the filter. Having a racy
+                    // update that might result in a few log lines being wrongfully accepted once in a blue moon
+                    // seemed like the lesser evil.
+                    eventCounter.set(1);
+                    break;
+                }
+            }
         }
 
         return onMatch;
+    }
+
+    long intervalNanos() {
+        return intervalNanos;
+    }
+
+    long maxEvents() {
+        return maxEvents;
     }
 
     @Override

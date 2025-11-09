@@ -20,16 +20,12 @@
   -->
 
 <Configuration status="WARN">
-    <ThrottlingFilter interval="1" timeUnit="MILLISECONDS" maxEvents="1"/>
+    <ThrottlingFilter interval="100" timeUnit="MILLISECONDS" maxEvents="1000"/>
     <Appenders>
-        <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
-        </Console>
         <CountingAppender name="CountingAppender"/>
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="Console"/>
             <AppenderRef ref="CountingAppender"/>
         </Root>
     </Loggers>

@@ -21,13 +21,19 @@ package com.github.mlangc.more.log4j2.test.helpers;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.core.Filter;
+import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.impl.Log4jLogEvent;
 import org.apache.logging.log4j.message.Message;
 import org.apache.logging.log4j.message.SimpleMessage;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.EnumMap;
+import java.util.Map;
+import java.util.function.Consumer;
 
 public class TestHelpers {
     public static final TestException TEST_EXCEPTION = new TestException();
@@ -91,6 +97,36 @@ public class TestHelpers {
         numLogs++;
 
         return numLogs;
+    }
+
+    public static Map<Filter.Result, Integer> filterWithAllOverloads(Filter filter, ExtendedLogger log, Level level, Marker marker, String message) {
+        Map<Filter.Result, Integer> results = new EnumMap<>(Filter.Result.class);
+        for (Filter.Result result : Filter.Result.values()) {
+            results.put(result, 0);
+        }
+
+        Consumer<Filter.Result> processResult = r -> results.merge(r, 1, Integer::sum);
+
+        Logger logger = (Logger) log;
+        Log4jLogEvent event = new Log4jLogEvent(log.getName(), marker, "org.apache.logging.log4j.spi.AbstractLogger", null, level, new SimpleMessage("test"), null, null);
+
+        processResult.accept(filter.filter(event));
+        processResult.accept(filter.filter(logger, level, marker, message));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0", message));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {}", message, 1));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {}", message, 1, 2));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {}", message, 1, 2, 3));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {}", message, 1, 2, 3, 4));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {} - {}", message, 1, 2, 3, 4, 5));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {} - {} - {}", message, 1, 2, 3, 4, 5, 6));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {} - {} - {} - {}", message, 1, 2, 3, 4, 5, 6, 7));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {} - {} - {} - {} - {}", message, 1, 2, 3, 4, 5, 6, 7, 8));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {} - {} - {} - {} - {} - {}", message, 1, 2, 3, 4, 5, 6, 7, 8, 9));
+        processResult.accept(filter.filter(logger, level, marker, "{} - 0 - {} - {} - {} - {} - {} - {} - {} - {} - {} - {}", message, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+        processResult.accept(filter.filter(logger, level, marker, (Object) message, TEST_EXCEPTION));
+        processResult.accept(filter.filter(logger, level, marker, new SimpleMessage(message), TEST_EXCEPTION));
+
+        return results;
     }
 
     public static LoggerContext loggerContextFromTestResource(String path) {
