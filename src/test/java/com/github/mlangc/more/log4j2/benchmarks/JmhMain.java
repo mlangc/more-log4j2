@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,6 +17,7 @@
  * limitations under the License.
  * #L%
  */
+
 package com.github.mlangc.more.log4j2.benchmarks;
 
 import org.openjdk.jmh.results.format.ResultFormatType;
@@ -27,11 +28,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import java.util.regex.Pattern;
 
 public class JmhMain {
-    public static void main(String[] args) throws RunnerException {
-        new Runner(new OptionsBuilder()
-                .resultFormat(ResultFormatType.JSON)
-                .include(Pattern.quote(ThrottlingVsBurstFilterBenchmark.class.getSimpleName()))
-                .threads(8)
-                .build()).run();
-    }
+  public static void main(String[] args) throws RunnerException {
+    new Runner(new OptionsBuilder()
+        .resultFormat(ResultFormatType.JSON)
+        .include(Pattern.quote(ThrottlingVsBurstFilterBenchmark.class.getSimpleName()))
+        .threads(8)
+        .build()).run();
+  }
 }
