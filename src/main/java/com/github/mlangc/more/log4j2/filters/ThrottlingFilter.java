@@ -31,21 +31,35 @@ import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.core.filter.AbstractFilter;
 import org.apache.logging.log4j.message.Message;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static java.util.Objects.requireNonNull;
 
 @Plugin(name = "ThrottlingFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
 public class ThrottlingFilter extends AbstractFilter {
+    private static final VarHandle START_TICKS_HANDLE;
+    private static final VarHandle EVENT_COUNTER_VAR_HANDLE;
+
+    static {
+        try {
+            var lookup = MethodHandles.lookup();
+            START_TICKS_HANDLE = lookup.findVarHandle(ThrottlingFilter.class, "startTicks", long.class);
+            EVENT_COUNTER_VAR_HANDLE = lookup.findVarHandle(ThrottlingFilter.class, "eventCounter", long.class);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     private final Level level;
     private final long intervalNanos;
     private final long maxEvents;
     private final Ticker ticker;
 
-    private final AtomicLong startTicks;
-    private final AtomicLong eventCounter;
+    private volatile long startTicks;
+    private volatile long eventCounter;
 
     ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEvents) {
         this(onMatch, onMismatch, level, intervalNanos, maxEvents, Ticker.SYSTEM);
@@ -58,8 +72,7 @@ public class ThrottlingFilter extends AbstractFilter {
         this.intervalNanos = intervalNanos;
         this.maxEvents = maxEventsPerInterval;
         this.ticker = ticker;
-        this.startTicks = new AtomicLong(ticker.currentTicks());
-        this.eventCounter = new AtomicLong();
+        this.startTicks = ticker.currentTicks();
     }
 
     @Override
@@ -154,6 +167,26 @@ public class ThrottlingFilter extends AbstractFilter {
         );
     }
 
+    private long getStartTicks() {
+        return (long) START_TICKS_HANDLE.getVolatile(this);
+    }
+
+    private long getEventCounter() {
+        return (long) EVENT_COUNTER_VAR_HANDLE.getVolatile(this);
+    }
+
+    private boolean weakCompareAndSetVolatileStartTicks(long expectedTicks, long newTicks) {
+        return START_TICKS_HANDLE.weakCompareAndSet(this, expectedTicks, newTicks);
+    }
+
+    private long incrementAndGetEventCounter() {
+        return (long) EVENT_COUNTER_VAR_HANDLE.getAndAdd(this, 1) + 1;
+    }
+
+    private void setEventCounter(long value) {
+        EVENT_COUNTER_VAR_HANDLE.setVolatile(this, value);
+    }
+
     private Result filter(Level level) {
         if (!this.level.isMoreSpecificThan(level)) {
             return onMatch;
@@ -161,18 +194,18 @@ public class ThrottlingFilter extends AbstractFilter {
 
         long t = ticker.currentTicks();
         while (true) {
-            long t0 = startTicks.get();
+            long t0 = getStartTicks();
             if (t0 + intervalNanos > t) {
-                if (eventCounter.get() >= maxEvents) {
+                if (getEventCounter() >= maxEvents) {
                     return onMismatch;
                 }
 
-                return eventCounter.incrementAndGet() <= maxEvents ? onMatch : onMismatch;
+                return incrementAndGetEventCounter() <= maxEvents ? onMatch : onMismatch;
             }
 
             long intoNewInterval = (t - t0) % intervalNanos;
             long newStartTicks = t - intoNewInterval;
-            if (startTicks.weakCompareAndSetVolatile(t0, newStartTicks)) {
+            if (weakCompareAndSetVolatileStartTicks(t0, newStartTicks)) {
                 // Note: This is a racy update, since another thread might have booked events
                 // after the compare and set above but before the set below. These events would then
                 // never be accounted for, leading to the filter to accept more logs than it actually
@@ -185,7 +218,7 @@ public class ThrottlingFilter extends AbstractFilter {
                 // Another option would be to use a lock, however, that leads to inferior performance as well.
                 // Having a racy update that might result in a few log lines being wrongfully accepted once in a blue moon
                 // seemed like the lesser evil.
-                eventCounter.set(1);
+                setEventCounter(1);
                 return onMatch;
             }
         }
