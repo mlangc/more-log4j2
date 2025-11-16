@@ -169,6 +169,24 @@ allows at most `maxEvents` logs in each interval. Note that this is subtly diffe
 sliding window of length `maxBurst / rate` seconds, and allows at most `maxBurst` logs in this window. For most practical 
 purposes, this difference should be negligible.
 
+### Performance Comparison to BurstFilter
+
+The most important performance related difference between `BurstFilter` and `ThrottlingFilter`, is that the latter is garbage free
+during steady state logging (see [here](https://logging.apache.org/log4j/2.x/manual/garbagefree.html#Filters) for mainline log4j2
+filters, that share this property). The overhead incurred by the `ThrottlingFilter`, apart from a call to
+`System.nanoTime`, is dominated by an atomic `incrementAndGet` for logs that are not throttled, and a volatile read for logs that
+are throttled. This makes it extremely lightweight.
+
+`BurstFilter`, as it is currently implemented, calls both `DelayQueue.poll` and `ConcurrentLinkedQueue.poll` at least once for
+every invocation, which implies calls to `System.nanoTime` and some locking. In addition, the implementation moves
+`LogDelay` objects between a `DelayQueue` and a `ConcurrentLinkedQueue`, which causes the allocation of queue internal nodes.
+
+If you are interested in the details, please also consider to take a look at the existing JMH benchmarks you find in this
+repository.
+
+Finally, it's important to keep things in perspective: None of this matters, unless millions of logs are filtered out per second,
+or you are extremely sensitive about allocations.
+
 ## Additional Notes
 
 ### Is that all?
