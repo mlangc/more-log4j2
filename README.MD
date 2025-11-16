@@ -179,7 +179,7 @@ that are throttled. This makes it extremely lightweight.
 
 `BurstFilter`, as it is currently implemented, calls both `DelayQueue.poll` and `ConcurrentLinkedQueue.poll` at least once for
 every invocation, which implies calls to `System.nanoTime` and some locking. In addition, the implementation moves
-`LogDelay` objects between a `DelayQueue` and a `ConcurrentLinkedQueue`, which causes the allocation of queue internal nodes.
+`LogDelay` objects between a `DelayQueue` and a `ConcurrentLinkedQueue`, which causes the allocation of queue nodes.
 
 If you are interested in the details, please also consider to take a look at the existing JMH benchmarks you find in this
 repository.
