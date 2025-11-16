@@ -31,12 +31,14 @@ import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginElement;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.message.Message;
+import org.apache.logging.log4j.util.PerformanceSensitive;
 
 import java.util.Arrays;
 
 import static java.util.Objects.requireNonNull;
 
 @Plugin(name = "RoutingFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
+@PerformanceSensitive("allocation")
 public class RoutingFilter extends AbstractLifeCycle implements Filter {
     private final DefaultFilterRoute defaultFilterRoute;
     private final FilterRoute[] filterRoutes;

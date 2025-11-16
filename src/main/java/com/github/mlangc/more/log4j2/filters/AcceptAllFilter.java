@@ -23,8 +23,10 @@ import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.config.Node;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
+import org.apache.logging.log4j.util.PerformanceSensitive;
 
 @Plugin(name = "AcceptAllFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
+@PerformanceSensitive("allocation")
 public class AcceptAllFilter extends ConstantFilter {
     @PluginFactory
     public static AcceptAllFilter create() {
