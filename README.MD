@@ -129,6 +129,46 @@ These two filters don't have any options, and always return either `ACCEPT` or `
 [DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2, and are
 especially useful in connection with `RoutingFilter`.
 
+## Throttling Filter
+
+`ThrottlingFilter` is an alternative to [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter),
+that provides roughly the same functionality, but with less overhead and without object allocations. Let's look at a few
+examples:
+
+#### Throttling WARN and below at most one log per second:
+```xml
+<ThrottlingFilter interval="1" timeUnit="SECONDS" maxEvents="1"/>
+```
+
+This is roughly what you get with
+```xml
+<BurstFilter rate="1" maxBurst="1"/>
+```
+
+#### Throttling DEBUG to at most 1 log per second, but allowing bursts up to 10
+```xml
+<ThrottlingFilter interval="10" timeUnit="SECONDS" maxEvents="10" level="debug"/>
+```
+
+This is roughly what you get with
+```xml
+<BurstFilter rate="1" maxBurst="10" level="debug"/>
+```
+
+### ThrottlingFilter Configuration
+
+| Attribute | Type                           | Default | Description                                                     |
+|-----------|--------------------------------|---------|-----------------------------------------------------------------|
+| interval  | long                           |         | The throttling interval.                                        |
+| timeUnit  | java.util.concurrent.TimeUnit  |         | The time unit of the throttling interval                        |
+| maxEvents | long                           |         | Maximal number of log events per interval                       |
+| level     | org.apache.logging.log4j.Level | WARN    | Only log events up until and including this level are throttled |
+
+Conceptually, `ThrottlingFilter` divides the timeline into fixed intervals according to the `interval` configuration above, and
+allows at most `maxEvents` logs in each interval. Note that this is subtly different from the `BurstFilter`, which maintains a
+sliding window of length `maxBurst / rate` seconds, and allows at most `maxBurst` logs in this window. For most practical 
+purposes, this difference should be negligible.
+
 ## Additional Notes
 
 ### Is that all?

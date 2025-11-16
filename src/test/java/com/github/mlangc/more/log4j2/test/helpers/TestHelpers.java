@@ -45,6 +45,10 @@ public class TestHelpers {
         }
     }
 
+    public static int logWithAllOverloads(ExtendedLogger log, String message) {
+        return logWithAllOverloads(log, null, message);
+    }
+
     public static int logWithAllOverloads(ExtendedLogger log, Marker marker, String message) {
         int numLogs = 0;
 
