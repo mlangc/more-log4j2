@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -31,7 +31,9 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.filter.BurstFilter;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 import org.openjdk.jmh.annotations.*;
+import org.openjdk.jmh.infra.Blackhole;
 
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.out;
@@ -40,14 +42,25 @@ import static java.lang.System.out;
 @Warmup(iterations = 3, time = 100, timeUnit = TimeUnit.MILLISECONDS)
 @Measurement(iterations = 5, time = 200, timeUnit = TimeUnit.MILLISECONDS)
 @BenchmarkMode(Mode.Throughput)
+@State(Scope.Thread)
 public class ThrottlingVsBurstFilterBenchmark {
     private static final int DEFAULT_RATE_DIVISOR = 20;
     private static final Logger LOG = (Logger) LogManager.getLogger(ThrottlingVsBurstFilterBenchmark.class);
+
+    ThreadLocalRandom random;
+
+    @Setup
+    public void setup() {
+        random = ThreadLocalRandom.current();
+    }
 
     @State(Scope.Benchmark)
     public abstract static class AbstractState {
         @Param({"1000"})
         long rate;
+
+        @Param({"0", "50", "100"})
+        int burnTokens;
     }
 
     public static class DirectInvocationState extends AbstractState {
@@ -109,21 +122,25 @@ public class ThrottlingVsBurstFilterBenchmark {
 
     @Benchmark
     public Filter.Result burstFilterDirect(DirectInvocationState state) {
+        Blackhole.consumeCPU(state.burnTokens);
         return state.burstFilter.filter(LOG, Level.INFO, null, "test");
     }
 
     @Benchmark
     public Filter.Result throttlingFilterDirect(DirectInvocationState state) {
+        Blackhole.consumeCPU(state.burnTokens);
         return state.throttlingFilter.filter(LOG, Level.INFO, null, "test");
     }
 
     @Benchmark
     public void burstFilterTopLevel(BurstFilterAtTopLevelState state) {
+        Blackhole.consumeCPU(state.burnTokens);
         state.log.info("test");
     }
 
     @Benchmark
     public void throttlingFilterTopLevel(ThrottlingFilterAtTopLevelState state) {
+        Blackhole.consumeCPU(state.burnTokens);
         state.log.info("test");
     }
 }
