@@ -135,7 +135,7 @@ especially useful in connection with `RoutingFilter`.
 that provides roughly the same functionality, but with less overhead and without object allocations. Let's look at a few
 examples:
 
-#### Throttling WARN and below at most one log per second:
+#### Throttling WARN and below to at most one log per second:
 ```xml
 <ThrottlingFilter interval="1" timeUnit="SECONDS" maxEvents="1"/>
 ```
@@ -159,9 +159,9 @@ This is roughly what you get with
 
 | Attribute | Type                           | Default | Description                                                     |
 |-----------|--------------------------------|---------|-----------------------------------------------------------------|
-| interval  | long                           |         | The throttling interval.                                        |
-| timeUnit  | java.util.concurrent.TimeUnit  |         | The time unit of the throttling interval                        |
-| maxEvents | long                           |         | Maximal number of log events per interval                       |
+| interval  | long                           | -       | The throttling interval.                                        |
+| timeUnit  | java.util.concurrent.TimeUnit  | -       | The time unit of the throttling interval                        |
+| maxEvents | long                           | -       | Maximal number of log events per interval                       |
 | level     | org.apache.logging.log4j.Level | WARN    | Only log events up until and including this level are throttled |
 
 Conceptually, `ThrottlingFilter` divides the timeline into fixed intervals according to the `interval` configuration above, and
