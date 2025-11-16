@@ -173,18 +173,12 @@ public class ThrottlingFilter extends AbstractFilter {
             long intoNewInterval = (t - t0) % intervalNanos;
             long newStartTicks = t - intoNewInterval;
             if (startTicks.compareAndSet(t0, newStartTicks)) {
-                // Note: This is a racy update, since another thread might have booked events
-                // after the compare and set above but before the set below. These events would then
-                // never be accounted for, leading to the filter to accept more logs than it actually
-                // should. However, note that the chance of this happening is very small, and even if it
-                // does, the filter will only accept a few additional logs that it would have otherwise
-                // rejected. Fixing this race on the other hand, would require us to tread both startTicks
-                // and eventCounter as a single atomic unit. This could be accomplished by putting them
-                // into a State class, and by replacing the two AtomicLongs with a single AtomicReference<State>.
-                // This would churn State objects though, for every invocation of the filter.
-                // Another option would be to use a lock, however, that leads to inferior performance as well.
-                // Having a racy update that might result in a few log lines being wrongfully accepted once in a blue moon
-                // seemed like the lesser evil.
+                // Note: This update is racy — another thread may increment eventCounter after the compareAndSet
+                // but before the set below. As a result, some events may not be counted, allowing a few extra
+                // logs through. Fixing this would require treating startTicks and eventCounter as
+                // a single atomic unit, e.g., with an AtomicReference<State> or a lock. Both alternatives have
+                // downsides: object churn or added overhead. Given the rarity and minor impact of this race,
+                // allowing occasional extra logs is an acceptable trade-off for performance.
                 eventCounter.set(1);
                 return onMatch;
             }
