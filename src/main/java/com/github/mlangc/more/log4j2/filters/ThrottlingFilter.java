@@ -199,7 +199,6 @@ public class ThrottlingFilter extends AbstractFilter {
                "level=" + level +
                ", interval=" + Duration.ofNanos(intervalNanos) +
                ", eventsPerInterval=" + maxEvents +
-               ", ticker=" + ticker +
                ", onMatch=" + onMatch +
                ", onMismatch=" + onMismatch +
                '}';
