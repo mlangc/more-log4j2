@@ -92,7 +92,7 @@ class ThrottlingFilterTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 2, 4, 8})
+    @ValueSource(ints = {1, 2, 3, 4, 5, 6, 7, 8})
     void shouldThrottleExcessiveLogsFromMultipleThreads(int parallelism) throws InterruptedException {
         try (LoggerContext context = TestHelpers.loggerContextFromTestResource(ThrottlingFilterTest.class.getSimpleName() + ".allowMany.xml")) {
             Configuration config = context.getConfiguration();
@@ -123,7 +123,7 @@ class ThrottlingFilterTest {
             stop.set(true);
             assertThat(CompletableFuture.allOf(futures)).succeedsWithin(1, TimeUnit.SECONDS);
 
-            long startedIntervals = (stoppedAt.get() - startedAt.get() + intervalNanos - 1) / intervalNanos;
+            long startedIntervals = Math.floorDiv(stoppedAt.get(), intervalNanos) - Math.floorDiv(startedAt.get(), intervalNanos) + 1;
             long maxLogs = startedIntervals * filter.maxEvents();
 
             CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
@@ -131,6 +131,7 @@ class ThrottlingFilterTest {
                     .isLessThanOrEqualTo(maxLogs);
         }
     }
+
     @Test
     @LoggerContextSource("ThrottlingFilterTest.atLogger.allowFew.xml")
     void shouldThrottleLogsFromSingleThreadWithFilterAtLogger(LoggerContext context, @Named("CountingAppender") CountingAppender countingAppender) throws InterruptedException {

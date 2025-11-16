@@ -20,7 +20,7 @@
   -->
 
 <Configuration status="WARN">
-    <ThrottlingFilter interval="100" timeUnit="MILLISECONDS" maxEvents="1000"/>
+    <ThrottlingFilter interval="10" timeUnit="MILLISECONDS" maxEvents="100"/>
     <Appenders>
         <CountingAppender name="CountingAppender"/>
     </Appenders>

@@ -60,8 +60,11 @@ public class ThrottlingFilter extends AbstractFilter {
         this.intervalNanos = intervalNanos;
         this.maxEvents = maxEventsPerInterval;
         this.ticker = ticker;
-        this.startTicks = new AtomicLong(ticker.currentTicks());
         this.eventCounter = new AtomicLong();
+
+        // Note: We could just initialize `startTicks` with `ticker.currentTicks()`, however, aligning intervals along multiples
+        // of `intervalNanos` makes the behaviour of the filter more predictable for tests.
+        this.startTicks = new AtomicLong(Math.floorDiv(ticker.currentTicks(), intervalNanos) * intervalNanos);
     }
 
     @Override
