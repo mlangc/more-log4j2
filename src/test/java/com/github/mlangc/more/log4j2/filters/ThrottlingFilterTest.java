@@ -35,11 +35,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,6 +133,55 @@ class ThrottlingFilterTest {
             CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
             assertThat(countingAppender.currentCount())
                     .isLessThanOrEqualTo(maxLogs);
+        }
+    }
+
+
+    @Test
+    void shouldNotAllowOnlyMinimalAmountOfAdditionalLogsDueToRace() throws InterruptedException {
+        try (LoggerContext context = TestHelpers.loggerContextFromTestResource(ThrottlingFilterTest.class.getSimpleName() + ".provokeRace.xml")) {
+            ExecutorService executor = Executors.newCachedThreadPool();
+            ExtendedLogger log = context.getLogger(getClass());
+            ThrottlingFilter throttlingFilter = (ThrottlingFilter) context.getConfiguration().getFilter();
+            CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
+
+            try {
+                for (int parallelism : new int[] { 16, 32, 64 }) {
+                    AtomicBoolean stop = new AtomicBoolean();
+                    AtomicLong started = new AtomicLong(Long.MAX_VALUE);
+                    AtomicLong ended = new AtomicLong(Long.MIN_VALUE);
+                    countingAppender.clear();
+
+                    Runnable logTillStopped = () -> {
+                        long t0 = System.nanoTime();
+                        started.updateAndGet(s -> Math.min(s, t0));
+                        while (!stop.get()) {
+                            TestHelpers.logWithAllOverloads(log, "test");
+                        }
+
+                        long t1 = System.nanoTime();
+                        ended.updateAndGet(e -> Math.max(e, t1));
+                    };
+
+                    List<CompletableFuture<?>> jobs = IntStream.range(0, parallelism)
+                            .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped, executor))
+                            .collect(Collectors.toList());
+
+                    Thread.sleep(10);
+                    stop.set(true);
+
+                    assertThat(jobs).allSatisfy(
+                            job -> assertThat(job).succeedsWithin(1, TimeUnit.SECONDS));
+
+                    long intervalsStarted = ended.get() / throttlingFilter.intervalNanos() - started.get() / throttlingFilter.intervalNanos() + 1;
+                    assertThat(countingAppender.currentCount())
+                            .as("parallelism=%s", parallelism)
+                            .isLessThanOrEqualTo(intervalsStarted * throttlingFilter.maxEvents());
+                }
+            } finally {
+                executor.shutdown();
+                assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+            }
         }
     }
 
