@@ -17,10 +17,8 @@
  * limitations under the License.
  * #L%
  */
-package com.github.mlangc.more.log4j2.filters;
+package com.github.mlangc.more.log4j2.appenders;
 
-interface Ticker {
-    long currentTicks();
+record HttpResponseWrapper<T>(T payload, int statusCode, String statusMessage) {
 
-    Ticker SYSTEM = System::nanoTime;
 }

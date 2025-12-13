@@ -24,6 +24,8 @@ import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.impl.Log4jLogEvent;
 import org.apache.logging.log4j.message.Message;
 import org.apache.logging.log4j.message.SimpleMessage;
@@ -34,6 +36,8 @@ import java.net.URISyntaxException;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.function.Consumer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestHelpers {
     public static final TestException TEST_EXCEPTION = new TestException();
@@ -140,5 +144,16 @@ public class TestHelpers {
         } catch (URISyntaxException | NullPointerException e) {
             throw new IllegalArgumentException("Error loading '" + path + "' from class path", e);
         }
+    }
+
+    public static LoggerContext loggerContextFromConfig(Configuration configuration) {
+        LoggerContext context = Configurator.initialize(configuration);
+        if (context.getConfiguration() != configuration) {
+            // TODO: Figure out why this seems to be sometimes necessary in tests
+            context.reconfigure(configuration);
+        }
+
+        assertThat(context.getConfiguration()).isSameAs(configuration);
+        return context;
     }
 }
