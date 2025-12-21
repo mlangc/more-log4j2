@@ -102,7 +102,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
     }
 
-    static StatusListener newDroppedBatchListener(Runnable onBatchDropped) {
+    public static StatusListener newDroppedBatchListener(Runnable onBatchDropped) {
         return new StatusListener() {
             @Override
             public void log(StatusData data) {
