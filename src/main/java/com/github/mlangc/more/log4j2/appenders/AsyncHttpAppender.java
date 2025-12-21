@@ -19,6 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Layout;
@@ -32,6 +33,8 @@ import org.apache.logging.log4j.core.config.plugins.*;
 import org.apache.logging.log4j.core.config.plugins.validation.constraints.Required;
 import org.apache.logging.log4j.core.util.Log4jThreadFactory;
 import org.apache.logging.log4j.core.util.NanoClock;
+import org.apache.logging.log4j.status.StatusData;
+import org.apache.logging.log4j.status.StatusListener;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -55,13 +58,14 @@ import static java.util.Objects.requireNonNull;
 
 @Plugin(name = "AsyncHttp", category = Node.CATEGORY, elementType = Appender.ELEMENT_TYPE, printObject = true)
 public class AsyncHttpAppender extends AbstractAppender {
+    private static final String DROPPING_BATCH_STATUS_LOG_MARKER_PREFIX = "[DROPPING_BATCH_MARKER]";
     private static final long DEFAULT_TIMEOUT_SECS = 15;
-
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     private final URI url;
     private final int maxBatchBytes;
     private final int lingerMs;
+    private final long lingerNs;
     private final int maxInFlight;
     private final int maxBatchLogEvents;
     private final int maxBatchBufferBytes;
@@ -96,6 +100,27 @@ public class AsyncHttpAppender extends AbstractAppender {
         FutureHolder(String jobName) {
             this.jobName = jobName;
         }
+    }
+
+    static StatusListener newDroppedBatchListener(Runnable onBatchDropped) {
+        return new StatusListener() {
+            @Override
+            public void log(StatusData data) {
+                if (data.getMessage().getFormattedMessage().startsWith(DROPPING_BATCH_STATUS_LOG_MARKER_PREFIX)) {
+                    onBatchDropped.run();
+                }
+            }
+
+            @Override
+            public Level getStatusLevel() {
+                return Level.WARN;
+            }
+
+            @Override
+            public void close() {
+
+            }
+        };
     }
 
     public enum RequestMethod {
@@ -147,6 +172,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         this.maxBatchBytes = maxBatchBytes;
         this.maxBatchBufferBytes = maxBatchBufferBytes;
         this.lingerMs = lingerMs;
+        this.lingerNs = TimeUnit.MILLISECONDS.toNanos(lingerMs);
         this.maxInFlight = maxInFlight;
         this.allowedInFlight = new Semaphore(maxInFlight);
         this.maxBatchLogEvents = maxBatchLogEvents;
@@ -248,12 +274,6 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     @Override
     public void append(LogEvent event) {
-        // The idea is this:
-        //  1) collect log events in currentBatch
-        //  2) once enough batches have been collected, they are pushed to bufferedBatches
-        //  3) a job is scheduled to drain queued batches
-        //  4) if there is no space left to push a new batch to the buffer, its simply discarded
-
         byte[] eventBytes = getLayout().toByteArray(event);
         doWithLock(() -> {
             if (currentBatch.isEmpty()) {
@@ -291,7 +311,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
 
             long elapsed = ticker.nanoTime() - firstRecordNanos;
-            if (elapsed > Math.round(lingerMs * 1e6 * 0.95)) {
+            if (elapsed > Math.round(lingerNs * 0.95)) {
                 flushAssumingLocked();
             }
         });
@@ -307,12 +327,12 @@ public class AsyncHttpAppender extends AbstractAppender {
         byte[] batchData = createBatch(currentBatch);
         if (batchData.length + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) {
             currentBufferBytes += batchData.length;
-            bufferedBatches.add(batchData);
+            bufferedBatches.addLast(batchData);
             runAsyncTracked("drainBufferedBatches", this::drainBufferedBatches, () -> { });
         } else {
-            getStatusLogger().warn("Dropping batch worth of {} bytes of log data because logs cannot be delivered fast enough. " +
+            getStatusLogger().warn("{} Dropping batch worth of {} bytes of log data because logs cannot be delivered fast enough. " +
                                    "currentBufferBytes={}, maxBatchBufferBytes={}, batchBytes={}",
-                    batchData.length, currentBufferBytes, maxBatchBufferBytes, batchData.length);
+                    DROPPING_BATCH_STATUS_LOG_MARKER_PREFIX, batchData.length, currentBufferBytes, maxBatchBufferBytes, batchData.length);
         }
 
         currentBatch.clear();
@@ -322,13 +342,13 @@ public class AsyncHttpAppender extends AbstractAppender {
     private void drainBufferedBatches() {
         doWithLock(() -> {
             while (true) {
-                var oldestBatch = bufferedBatches.peek();
+                var oldestBatch = bufferedBatches.peekFirst();
                 if (oldestBatch == null) {
                     break;
                 }
 
                 if (!allowedInFlight.tryAcquire()) {
-                    executor().schedule(this::drainBufferedBatches, ThreadLocalRandom.current().nextInt(lingerMs), TimeUnit.MILLISECONDS);
+                    executor().schedule(this::drainBufferedBatches, ThreadLocalRandom.current().nextLong(lingerNs + 1), TimeUnit.NANOSECONDS);
                     getStatusLogger().debug("Too many request in flight; trying later");
                     break;
                 }
@@ -490,6 +510,10 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     int maxBatchBytes() {
         return maxBatchBytes;
+    }
+
+    int maxBatchBufferBytes() {
+        return maxBatchBufferBytes;
     }
 
     int connectTimeoutMillis() {

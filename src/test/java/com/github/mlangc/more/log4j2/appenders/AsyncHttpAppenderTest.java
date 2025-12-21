@@ -76,6 +76,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
@@ -90,7 +91,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AsyncHttpAppenderTest {
-    private static final Logger STATUS_LOGGER = StatusLogger.getLogger();
+    private static final StatusLogger STATUS_LOGGER = StatusLogger.getLogger();
 
     static class SslConfigSupplier implements HttpClientSslConfigSupplier {
         @Override
@@ -1117,6 +1118,33 @@ class AsyncHttpAppenderTest {
         }
 
         wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo("###l012345678901234567890123456789g###l012345678901234567890123456789g###")));
+    }
+
+    @Test
+    void droppedBatchesShouldBeConsistentWithDataSentToBackend() throws IOException {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(250)));
+
+        var batchesDropped = new AtomicInteger();
+        final var numLongMessages = 3;
+        String longMessage;
+        try (var batchDroppedListener = AsyncHttpAppender.newDroppedBatchListener(batchesDropped::incrementAndGet)) {
+            STATUS_LOGGER.registerListener(STATUS_LOGGER.getFallbackListener());
+            STATUS_LOGGER.registerListener(batchDroppedListener);
+            try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.withSmallBatchAndBatchBufferSize.xml")) {
+                var batchBufferBytes = ((AsyncHttpAppender) context.getConfiguration().getAppender("AsyncHttp")).maxBatchBufferBytes();
+                var log = context.getLogger(getClass());
+                longMessage = "x".repeat(batchBufferBytes + 1);
+
+                for (int i = 0; i < numLongMessages; i++) {
+                    log.info(longMessage);
+                }
+            } finally {
+                STATUS_LOGGER.reset();
+            }
+        }
+
+        assertThat(batchesDropped).hasPositiveValue();
+        wireMockExt.verify(numLongMessages - batchesDropped.get(), postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo(longMessage)));
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {
