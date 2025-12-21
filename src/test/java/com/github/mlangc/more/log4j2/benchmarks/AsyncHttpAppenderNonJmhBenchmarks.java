@@ -26,55 +26,70 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
     private static final StatusLogger STATUS_LOGGER = StatusLogger.getLogger();
 
     public static void main(String[] args) throws Exception {
-        new WiremockBenchmarkTemplate() {
+        System.setProperty("benchmarkLog4jPattern", "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n");
+
+        new BenchmarkTemplate() {
             @Override
-            int parallelism() {
-                return 4;
+            String log4jConfigLocation() {
+                return "AsyncHttpAppenderNonJmhBenchmarks.datadogVanilla.xml";
             }
 
             @Override
-            void configureWireMock(MappingBuilder mappingBuilder) {
-                mappingBuilder.willReturn(ok());
+            int parallelism() {
+                return 1;
             }
         }.run();
     }
 
     static abstract class BenchmarkTemplate {
-        abstract String configLocation();
+        record LoadCfg(int logsPerSecond0, int logsPerSecondIncrement) { }
+
+        LoadCfg loadConfig() {
+            return new LoadCfg(5000, 1000);
+        }
+
+        abstract String log4jConfigLocation();
         abstract int parallelism();
-        abstract void setupBackend() throws Exception;
 
-        abstract void shutdown() throws Exception;
+        void setupBackend() throws Exception {
 
-        void logInfoMessage(Logger log) {
-            var logMessage = "A prefix for king & country: " + RandomStringUtils.insecure().nextAlphanumeric(10, 30);
-            log.info(logMessage);
+        }
+
+        void shutdown() throws Exception {
+
+        }
+
+        void logInfoMessage(Logger log, long threadLocalSequence) {
+            log.info("[{}] A prefix for king & country: {}", threadLocalSequence, RandomStringUtils.insecure().nextAlphanumeric(10, 30));
         }
 
         void run() throws Exception {
             setupBackend();
 
+            var loadConfig = loadConfig();
             var logLines = new LongAdder();
             var stop = new AtomicBoolean();
-            var logsPerSecond0 = 100_000;
-            var incrementLogsPerStep = 100_000;
             var nextStep = new MutableInt(1);
-            var permits = new Semaphore(logsPerSecond0);
+            var permits = new Semaphore(loadConfig.logsPerSecond0);
 
             var lastLogLines = new MutableLong(0);
             var lastRecordedLogsPerSecondRate = new MutableLong(-1);
 
             Runnable startNextStep = () -> {
+                if (stop.get()) {
+                    return;
+                }
+
                 var currentLogLines = logLines.longValue();
                 var newLogLines = currentLogLines - lastLogLines.longValue();
                 lastRecordedLogsPerSecondRate.setValue(newLogLines);
                 lastLogLines.setValue(currentLogLines);
 
-                var newPerSecondTarget = logsPerSecond0 + nextStep.intValue() * incrementLogsPerStep;
+                var newPerSecondTarget = loadConfig.logsPerSecond0 + nextStep.intValue() * loadConfig.logsPerSecondIncrement;
+                var lastPerSecondTarget = newPerSecondTarget - loadConfig.logsPerSecondIncrement;
 
-                out.printf("Trying %s logs per second; last achieved rate at %s%n", newPerSecondTarget, lastRecordedLogsPerSecondRate.longValue());
+                out.printf("Trying %s logs per second; last achieved rate at %s%n", newPerSecondTarget, newLogLines);
 
-                var lastPerSecondTarget = newPerSecondTarget - incrementLogsPerStep;
                 if (lastRecordedLogsPerSecondRate.longValue() * 1.1 < lastPerSecondTarget) {
                     out.printf("Stopping the benchmark, since the requested log rates cannot be sustained%n");
                     stop.set(true);
@@ -87,18 +102,21 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
             var executor = Executors.newScheduledThreadPool(1, Log4jThreadFactory.createDaemonThreadFactory(getClass().getSimpleName()));
             ScheduledFuture<?> refillPermitsSchedule = null;
             try {
-                refillPermitsSchedule = executor.scheduleAtFixedRate(startNextStep, 1, 1, TimeUnit.SECONDS);
-
                 STATUS_LOGGER.registerListener(STATUS_LOGGER.getFallbackListener());
                 STATUS_LOGGER.registerListener(AsyncHttpAppender.newDroppedBatchListener(() -> stop.set(true)));
-                try (var context = TestHelpers.loggerContextFromTestResource(configLocation())) {
+                try (var context = TestHelpers.loggerContextFromTestResource(log4jConfigLocation())) {
+                    out.printf("Loaded context with config %s%n", context.getConfiguration());
+
                     var log = context.getLogger(getClass());
 
                     Runnable loggerLoop = () -> {
                         try {
+                            out.printf("Started loggerLoop[%s]%n", Thread.currentThread().getName());
+
+                            var sequence = 0L;
                             while (!stop.get()) {
                                 if (permits.tryAcquire(1, TimeUnit.MILLISECONDS)) {
-                                    logInfoMessage(log);
+                                    logInfoMessage(log, sequence++);
                                     logLines.increment();
                                 }
                             }
@@ -108,6 +126,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                         }
                     };
 
+                    refillPermitsSchedule = executor.scheduleAtFixedRate(startNextStep, 1, 1, TimeUnit.SECONDS);
                     IntStream.range(0, parallelism())
                             .mapToObj(ignore -> CompletableFuture.runAsync(loggerLoop))
                             .toList()
@@ -135,8 +154,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         final String wireMockPath = "/logs/" + getClass().getSimpleName();
 
         @Override
-        String configLocation() {
-            return "AsyncHttpAppenderTest.wireMockPerfTestVanilla.xml";
+        String log4jConfigLocation() {
+            return "AsyncHttpAppenderNonJmhBenchmarks.wireMockVanilla.xml";
         }
 
         @Override
@@ -150,7 +169,9 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
             wireMockServer.stubFor(stubConfiguration);
         }
 
-        abstract void configureWireMock(MappingBuilder mappingBuilder);
+        void configureWireMock(MappingBuilder mappingBuilder) {
+            mappingBuilder.willReturn(ok());
+        }
 
         @Override
         void shutdown() {

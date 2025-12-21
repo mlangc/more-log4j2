@@ -21,11 +21,13 @@
 
 <Configuration status="WARN">
     <Properties>
-        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %c{2} - %msg%n"/>
+        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
     </Properties>
     <Appenders>
-        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}">
-            <PatternLayout pattern="${pattern}"/>
+        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" contentEncoding="gzip">
+            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
+            <Property name="Content-Type" value="application/jsonl"/>
+            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json"/>
         </AsyncHttp>
 
         <Console name="Console">
@@ -34,7 +36,7 @@
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="AsyncHttp"/>
+            <AppenderRef ref="Dynatrace"/>
         </Root>
     </Loggers>
 </Configuration>
