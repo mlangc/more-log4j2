@@ -183,7 +183,7 @@ that are throttled. This makes it extremely lightweight.
 every invocation, which implies calls to `System.nanoTime` and some locking. In addition, the implementation moves
 `LogDelay` objects between a `DelayQueue` and a `ConcurrentLinkedQueue`, which causes the allocation of queue nodes.
 
-If you are interested in the details, please also consider to take a look at the existing JMH benchmarks you find in this
+If you are interested in the details, please consider to take a look at the existing JMH benchmarks you find in this
 repository.
 
 Finally, it's important to keep things in perspective: None of this matters, unless millions of logs are filtered out per second,
