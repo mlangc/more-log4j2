@@ -45,7 +45,7 @@
             <AppenderRef ref="AsyncHttp"/>
 
             <AppenderRef ref="Console">
-                <BurstFilter rate="0.1"/>
+                <BurstFilter rate="0.1" maxBurst="3"/>
             </AppenderRef>
         </Root>
     </Loggers>

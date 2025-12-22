@@ -36,6 +36,10 @@
         <Root level="info">
             <AppenderRef ref="AsyncHttp"/>
         </Root>
+
+        <AppenderRef ref="Console">
+            <BurstFilter rate="0.1" maxBurst="3"/>
+        </AppenderRef>
     </Loggers>
 </Configuration>
 

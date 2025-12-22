@@ -38,6 +38,10 @@
         <Root level="info">
             <AppenderRef ref="Dynatrace"/>
         </Root>
+
+        <AppenderRef ref="Console">
+            <BurstFilter rate="0.1" maxBurst="3"/>
+        </AppenderRef>
     </Loggers>
 </Configuration>
 
