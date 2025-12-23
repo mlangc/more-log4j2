@@ -20,6 +20,7 @@
 package com.github.mlangc.more.log4j2.appenders;
 
 import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Layout;
@@ -35,6 +36,7 @@ import org.apache.logging.log4j.core.util.Log4jThreadFactory;
 import org.apache.logging.log4j.core.util.NanoClock;
 import org.apache.logging.log4j.status.StatusData;
 import org.apache.logging.log4j.status.StatusListener;
+import org.apache.logging.log4j.status.StatusLogger;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -94,7 +96,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     private long firstRecordNanos;
     private ScheduledFuture<?> scheduledFlush;
 
-    private record Batch(byte[] data, long uncompressedBytes) {
+    private record Batch(byte[] data, long uncompressedBytes, int logEvents) {
         int effectiveBytes() {
             return data.length;
         }
@@ -146,9 +148,9 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public static final BatchDropped BATCH_DROPPED = new BatchDropped();
 
-    public record BatchCompletionEvent(AsyncHttpAppender source, long bytesUncompressed, int bytesCompressed, BatchCompletionType completionType) {
+    public record BatchCompletionEvent(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, BatchCompletionType completionType) {
         private BatchCompletionEvent(AsyncHttpAppender source, Batch batch, BatchCompletionType completionType) {
-            this(source, batch.uncompressedBytes, batch.effectiveBytes(), completionType);
+            this(source, batch.uncompressedBytes, batch.effectiveBytes(), batch.logEvents, completionType);
         }
     }
 
@@ -266,7 +268,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "lingerMs", defaultInt = 5000) int lingerMs,
             @PluginAttribute(value = "maxBatchBytes", defaultInt = 250_000) int maxBatchBytes,
             @PluginAttribute(value = "maxBatchBufferBytes", defaultInt = Integer.MIN_VALUE) int maxBatchBufferBytes,
-            @PluginAttribute(value = "maxBatchLogEvents", defaultInt = 5000) int maxBatchLogEvents,
+            @PluginAttribute(value = "maxBatchLogEvents", defaultInt = 1000) int maxBatchLogEvents,
             @PluginAttribute(value = "ignoreExceptions", defaultBoolean = true) boolean ignoreExceptions,
             @PluginAttribute(value = "connectTimeoutMillis", defaultInt = 10_000) int connectTimeoutMillis,
             @PluginAttribute(value = "readTimeoutMillis", defaultInt = 10_000) int readTimeoutMillis,
@@ -301,7 +303,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 batchSuffix == null ? EMPTY_BYTE_ARRAY : batchSuffix.getBytes(StandardCharsets.UTF_8),
                 retries, contentEncoding,
                 maxBatchBufferBytes == Integer.MIN_VALUE
-                        ? (maxBatchBytes > 0 ? clampedMul(maxBatchBytes, 50) : 10_000_000)
+                        ? (maxBatchBytes > 0 ? clampedMul(maxBatchBytes, 50) : 250_000_000)
                         : maxBatchBufferBytes,
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
@@ -662,7 +664,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
         }
 
-        return new Batch(res, uncompressedBytes);
+        return new Batch(res, uncompressedBytes, events.size());
     }
 
     @Override
@@ -798,15 +800,41 @@ public class AsyncHttpAppender extends AbstractAppender {
     }
 
     private static void defaultOnBatchCompletionEventListener(BatchCompletionEvent event) {
-        if (event.completionType instanceof BatchDeliveredError deliveredError) {
-            getStatusLogger().warn("Error delivering batch of {} bytes ({} bytes uncompressed): {}",
-                    event.bytesCompressed, event.bytesUncompressed, deliveredError.httpStatus);
-        } else if (event.completionType instanceof BatchDeliveryFailed deliveryFailed) {
-            getStatusLogger().warn("Delivery of batch with {} bytes ({} bytes uncompressed) failed",
-                    event.bytesCompressed, event.bytesUncompressed, deliveryFailed.exception);
-        } else if (event.completionType instanceof BatchDropped) {
-            getStatusLogger().warn("Dropping batch of {} bytes ({} bytes uncompressed) because the HTTP backend is not keeping up",
-                    event.bytesCompressed, event.bytesUncompressed);
+        logBatchCompletionEvent(getStatusLogger(), null, event);
+    }
+
+    public static void logBatchCompletionEvent(Logger log, Executor executor, BatchCompletionEvent event) {
+        Logger actualLog;
+        if (!(log instanceof StatusLogger) && !event.source.isStarted()) {
+            actualLog = StatusLogger.getLogger();
+        } else {
+            actualLog = log;
+        }
+
+        Runnable logBatchCompletion = () -> {
+            double compressionRate = (double) event.bytesUncompressed / event.bytesEffective;
+
+            if (event.completionType instanceof BatchDeliveredError deliveredError) {
+                actualLog.warn("Error delivering batch of {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events: {}",
+                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents, deliveredError.httpStatus);
+            } else if (event.completionType instanceof BatchDeliveryFailed deliveryFailed) {
+                actualLog.warn("Delivery of batch with {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events failed",
+                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents, deliveryFailed.exception);
+            } else if (event.completionType instanceof BatchDropped) {
+                actualLog.warn("Dropping batch of {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events because the HTTP backend is not keeping up",
+                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents);
+            } else if (event.completionType instanceof BatchDeliveredSuccess deliveredSuccess) {
+                actualLog.info("Delivered batch of {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events with {}",
+                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents, deliveredSuccess.httpStatus);
+            } else {
+                actualLog.error("Received event with unknown completionType: {}", event);
+            }
+        };
+
+        if (executor == null || log instanceof StatusLogger) {
+            logBatchCompletion.run();
+        } else {
+            executor.execute(logBatchCompletion);
         }
     }
 }

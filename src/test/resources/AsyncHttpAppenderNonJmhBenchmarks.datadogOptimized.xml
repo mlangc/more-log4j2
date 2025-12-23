@@ -26,7 +26,8 @@
     <Appenders>
         <AsyncHttp name="AsyncHttp" url="https://http-intake.logs.datadoghq.eu/api/v2/logs"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
-                   batchPrefix="[" batchSeparator="," batchSuffix="]" httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
+                   batchPrefix="[" batchSeparator="," batchSuffix="]" maxBatchBytes="4500000" contentEncoding="gzip"
+                   httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
             <Property name="DD-API-KEY" value="${env:DATADOG_API_KEY}"/>
             <Property name="Content-Type" value="application/json"/>
             <JsonTemplateLayout eventTemplateUri="classpath:DatadogLogMessageJsonLayout.json">

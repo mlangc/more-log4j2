@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,9 +27,9 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.exception.UncheckedInterruptedException;
 import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.commons.lang3.mutable.MutableLong;
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.util.Log4jThreadFactory;
-import org.apache.logging.log4j.status.StatusLogger;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -42,15 +42,18 @@ import static java.lang.System.out;
 
 
 public class AsyncHttpAppenderNonJmhBenchmarks {
-    private static final StatusLogger STATUS_LOGGER = StatusLogger.getLogger();
-
     public static void main(String[] args) throws Exception {
         System.setProperty("benchmarkLog4jPattern", "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n");
 
         new BenchmarkTemplate() {
             @Override
+            LoadCfg loadConfig() {
+                return new LoadCfg(100_000, 10_000);
+            }
+
+            @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.datadogVanilla.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.datadogOptimized.xml";
             }
 
             @Override
@@ -58,6 +61,24 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                 return 1;
             }
         }.run();
+    }
+
+    public static class BatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+        private static final Logger LOG = LogManager.getLogger(BatchCompletionListener.class);
+        static volatile AtomicBoolean stopFlag;
+
+        @Override
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent completionEvent) {
+            AsyncHttpAppender.logBatchCompletionEvent(LOG, ForkJoinPool.commonPool(), completionEvent);
+
+            if (completionEvent.completionType() instanceof AsyncHttpAppender.BatchDropped) {
+                var localStopFlag = stopFlag;
+
+                if (localStopFlag.compareAndSet(false, true)) {
+                    out.printf("Stopping benchmark since a batch has been dropped%n");
+                }
+            }
+        }
     }
 
     static abstract class BenchmarkTemplate {
@@ -68,6 +89,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         }
 
         abstract String log4jConfigLocation();
+
         abstract int parallelism();
 
         void setupBackend() throws Exception {
@@ -88,6 +110,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
             var loadConfig = loadConfig();
             var logLines = new LongAdder();
             var stop = new AtomicBoolean();
+            BatchCompletionListener.stopFlag = stop;
+
             var nextStep = new MutableInt(1);
             var permits = new Semaphore(loadConfig.logsPerSecond0);
 
@@ -120,44 +144,39 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
             var executor = Executors.newScheduledThreadPool(1, Log4jThreadFactory.createDaemonThreadFactory(getClass().getSimpleName()));
             ScheduledFuture<?> refillPermitsSchedule = null;
-            try {
-                STATUS_LOGGER.registerListener(STATUS_LOGGER.getFallbackListener());
-                STATUS_LOGGER.registerListener(AsyncHttpAppender.newDroppedBatchListener(() -> stop.set(true)));
-                try (var context = TestHelpers.loggerContextFromTestResource(log4jConfigLocation())) {
-                    out.printf("Loaded context with config %s%n", context.getConfiguration());
+            try (var context = TestHelpers.loggerContextFromTestResource(log4jConfigLocation())) {
+                out.printf("Loaded context with config %s%n", context.getConfiguration());
 
-                    var log = context.getLogger(getClass());
+                var log = context.getLogger(getClass());
 
-                    Runnable loggerLoop = () -> {
-                        try {
-                            out.printf("Started loggerLoop[%s]%n", Thread.currentThread().getName());
+                Runnable loggerLoop = () -> {
+                    try {
+                        out.printf("Started loggerLoop[%s]%n", Thread.currentThread().getName());
 
-                            var sequence = 0L;
-                            while (!stop.get()) {
-                                if (permits.tryAcquire(1, TimeUnit.MILLISECONDS)) {
-                                    logInfoMessage(log, sequence++);
-                                    logLines.increment();
-                                }
+                        var sequence = 0L;
+                        while (!stop.get()) {
+                            if (permits.tryAcquire(1, TimeUnit.MILLISECONDS)) {
+                                logInfoMessage(log, sequence++);
+                                logLines.increment();
                             }
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new UncheckedInterruptedException(e);
                         }
-                    };
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new UncheckedInterruptedException(e);
+                    }
+                };
 
-                    refillPermitsSchedule = executor.scheduleAtFixedRate(startNextStep, 1, 1, TimeUnit.SECONDS);
-                    IntStream.range(0, parallelism())
-                            .mapToObj(ignore -> CompletableFuture.runAsync(loggerLoop))
-                            .toList()
-                            .forEach(CompletableFuture::join);
-                } finally {
-                    STATUS_LOGGER.reset();
-                }
+                refillPermitsSchedule = executor.scheduleAtFixedRate(startNextStep, 1, 1, TimeUnit.SECONDS);
+                IntStream.range(0, parallelism())
+                        .mapToObj(ignore -> CompletableFuture.runAsync(loggerLoop))
+                        .toList()
+                        .forEach(CompletableFuture::join);
             } finally {
                 if (refillPermitsSchedule != null) {
                     refillPermitsSchedule.cancel(false);
                 }
 
+                BatchCompletionListener.stopFlag = null;
                 executor.shutdown();
                 shutdown();
             }
