@@ -21,20 +21,29 @@ package com.github.mlangc.more.log4j2.demos;
 
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import org.apache.logging.log4j.core.LoggerContext;
-import org.apache.logging.log4j.spi.ExtendedLogger;
+
+import java.util.List;
 
 public class IngestLogsViaHttpDemo {
+    private static final List<String> DEMO_CONFIG_PATHS = List.of(
+            "IngestLogsIntoDatadogViaHttpAppenderConfig.xml",
+            "IngestLogsIntoDatadogViaAsyncHttpAppenderConfig.xml",
+            "IngestLogsIntoDynatraceViaHttpAppenderConfig.xml",
+            "IngestLogsIntoDatadogViaAsyncHttpAppenderConfig.xml");
+
     public static void main(String[] args) {
-        try (LoggerContext loggerContext = TestHelpers.loggerContextFromTestResource("IngestLogsIntoDatadogViaAsyncHttpAppenderConfig.xml")) {
-            ExtendedLogger log = loggerContext.getLogger(IngestLogsViaHttpDemo.class);
+        for (var demoConfigPath : DEMO_CONFIG_PATHS) {
+            try (LoggerContext context = TestHelpers.loggerContextFromTestResource(demoConfigPath)) {
+                int numLogs = 100;
 
-            int numLogs = 500;
+                var log = context.getLogger(IngestLogsViaHttpDemo.class);
 
-            for (int logs = 0; logs < numLogs; logs++) {
-                log.info("{} log messages so far have been logged", logs + 1);
+                for (int logs = 0; logs < numLogs; logs++) {
+                    log.info("{} log messages so far have been logged using {}", logs + 1, demoConfigPath);
+                }
+
+                log.info("All done with demo config {}", demoConfigPath);
             }
-
-            log.info("All done");
         }
     }
 }
