@@ -1,0 +1,27 @@
+  {
+    "resource": {
+      "attributes": [
+        { "key": "service.name", "value": { "stringValue": "test-app" } }
+      ]
+    },
+    "scopeLogs": [
+      {
+        "logRecords": [
+          {
+            "timeUnixNano": {
+              "$resolver": "timestamp",
+              "epoch": {
+                "unit": "nanos",
+                "rounded": true
+              }
+            }, "body": {
+            "stringValue": {
+              "$resolver": "pattern",
+              "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"
+            }
+          }
+          }
+        ]
+      }
+    ]
+  }

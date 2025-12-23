@@ -24,22 +24,13 @@
         <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
     </Properties>
     <Appenders>
-        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" contentEncoding="gzip"
+        <AsyncHttp name="Grafana" url="https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/logs"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
-                   maxBatchBytes="10000000" maxBatchLogEvents="50000" httpSuccessCodes="204" httpRetryCodes="429,503">
-            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
-            <Property name="Content-Type" value="application/jsonl"/>
-            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
-                <EventTemplateAdditionalField
-                        key="message"
-                        format="JSON"
-                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+                   batchPrefix='{"resourceLogs":[' batchSeparator="," batchSuffix="]}">
+            <Property name="Authorization" value="Basic ${env:GRAFANA_TOKEN}"/>
+            <Property name="Content-Type" value="application/json"/>
 
-                <EventTemplateAdditionalField key="env" value="perf_test"/>
-                <EventTemplateAdditionalField key="source" value="AsyncHttpAppender.perf_test"/>
-                <EventTemplateAdditionalField key="hostname" value="robotnik-m4"/>
-                <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
-            </JsonTemplateLayout>
+            <JsonTemplateLayout eventTemplateUri="classpath:GrafanaOtlpSingleLogMessageJsonLayout.json"/>
         </AsyncHttp>
 
         <Console name="Console">
@@ -48,7 +39,7 @@
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="Dynatrace"/>
+            <AppenderRef ref="Grafana"/>
 
             <AppenderRef ref="Console">
                 <BurstFilter rate="0.1" maxBurst="3"/>

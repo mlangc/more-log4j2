@@ -20,6 +20,9 @@
   -->
 
 <Configuration status="WARN">
+    <Properties>
+        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
+    </Properties>
     <Appenders>
         <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
