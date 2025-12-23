@@ -21,8 +21,9 @@
 
 <Configuration status="WARN">
     <Appenders>
-        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}" maxBatchLogEvents="5" maxBatchBytes="100"
-                   batchCompletionListener="com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener">
+        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}" maxBatchLogEvents="1"
+                   contentEncoding="gzip" batchCompletionListener="com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener"
+                   lingerMs="1" retries="0">
             <PatternLayout pattern="%msg"/>
         </AsyncHttp>
     </Appenders>

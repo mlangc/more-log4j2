@@ -82,16 +82,23 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final int[] httpSuccessCodes;
     private final int[] httpRetryCodes;
     private final boolean retryOnIoError;
+    private final BatchCompletionListener batchCompletionListener;
 
     private final Set<FutureHolder> trackedFutures = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Lock lock = new ReentrantLock();
     private final Semaphore allowedInFlight;
     private final List<byte[]> currentBatch = new ArrayList<>();
     private long currentBatchBytes;
-    private final Deque<byte[]> bufferedBatches;
+    private final Deque<Batch> bufferedBatches;
     private long currentBufferBytes;
     private long firstRecordNanos;
     private ScheduledFuture<?> scheduledFlush;
+
+    private record Batch(byte[] data, long uncompressedBytes) {
+        int effectiveBytes() {
+            return data.length;
+        }
+    }
 
     private static class FutureHolder {
         final String jobName;
@@ -123,6 +130,32 @@ public class AsyncHttpAppender extends AbstractAppender {
         };
     }
 
+    public sealed interface BatchCompletionType { }
+
+    public record BatchDeliveredSuccess(HttpStatus httpStatus, int tries) implements BatchCompletionType { }
+
+    public record BatchDeliveredError(HttpStatus httpStatus, int tries) implements BatchCompletionType { }
+
+    public record BatchDeliveryFailed(Exception exception, int tries) implements BatchCompletionType { }
+
+    public static final class BatchDropped implements BatchCompletionType {
+        private BatchDropped() {
+
+        }
+    }
+
+    public static final BatchDropped BATCH_DROPPED = new BatchDropped();
+
+    public record BatchCompletionEvent(AsyncHttpAppender source, long bytesUncompressed, int bytesCompressed, BatchCompletionType completionType) {
+        private BatchCompletionEvent(AsyncHttpAppender source, Batch batch, BatchCompletionType completionType) {
+            this(source, batch.uncompressedBytes, batch.effectiveBytes(), completionType);
+        }
+    }
+
+    public interface BatchCompletionListener {
+        void onBatchCompletionEvent(BatchCompletionEvent completionEvent);
+    }
+
     public enum RequestMethod {
         POST, PUT
     }
@@ -140,7 +173,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             int maxBatchBytes, int lingerMs, int maxInFlight,
             int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, RequestMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
-            boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy) {
+            boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener) {
         super(name, filter, layout, ignoreExceptions, properties);
 
         if (maxBatchBufferBytes <= 0) {
@@ -198,6 +231,12 @@ public class AsyncHttpAppender extends AbstractAppender {
                 s -> contains(s, httpRetryCodes));
 
         this.retryManager = new HttpRetryManager(retryConfig, httpClientManager.executor);
+
+        if (batchCompletionListener != null && !batchCompletionListener.isEmpty()) {
+            this.batchCompletionListener = newInstanceFromConfiguredClassName(BatchCompletionListener.class, batchCompletionListener);
+        } else {
+            this.batchCompletionListener = AsyncHttpAppender::defaultOnBatchCompletionEventListener;
+        }
     }
 
     private static boolean intersects(int[] left, int[] right) {
@@ -243,6 +282,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "retryOnIoError", defaultBoolean = true) boolean retryOnIoError,
             @PluginAttribute(value = "contentEncoding", defaultString = "identity") ContentEncoding contentEncoding,
             @PluginAttribute(value = "httpClientSslConfigSupplier") String httpClientSslConfigSupplier,
+            @PluginAttribute(value = "batchCompletionListener") String batchCompletionListener,
             @PluginElement("Filter") Filter filter,
             @PluginElement("Layout") Layout<? extends Serializable> layout,
             @PluginElement("Properties") Property[] properties,
@@ -265,7 +305,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                         : maxBatchBufferBytes,
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
-                retryOnIoError, batchSeparatorInsertionStrategy);
+                retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener);
     }
 
     private static int clampedMul(int a, int b) {
@@ -324,15 +364,13 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         // Implementation note: Creating a batch can be a relatively expensive operation, especially if compression is enabled.
         // It might therefore be preferable to release the lock before doing so, at least under specific conditions.
-        byte[] batchData = createBatch(currentBatch);
-        if (batchData.length + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) {
-            currentBufferBytes += batchData.length;
-            bufferedBatches.addLast(batchData);
+        Batch batch = createBatch(currentBatch);
+        if (batch.effectiveBytes() + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) {
+            currentBufferBytes += batch.effectiveBytes();
+            bufferedBatches.addLast(batch);
             runAsyncTracked("drainBufferedBatches", this::drainBufferedBatches, () -> { });
         } else {
-            getStatusLogger().warn("{} Dropping batch worth of {} bytes of log data because logs cannot be delivered fast enough. " +
-                                   "currentBufferBytes={}, maxBatchBufferBytes={}, batchBytes={}",
-                    DROPPING_BATCH_STATUS_LOG_MARKER_PREFIX, batchData.length, currentBufferBytes, maxBatchBufferBytes, batchData.length);
+            batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(this, batch, BATCH_DROPPED));
         }
 
         currentBatch.clear();
@@ -354,7 +392,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 }
 
                 bufferedBatches.removeFirst();
-                int releaseBytes = oldestBatch.length;
+                int releaseBytes = oldestBatch.data.length;
 
                 runAsyncTracked("sendBatchBytes", () -> sendBatchAndEventuallyRetry(oldestBatch), () -> {
                     allowedInFlight.release();
@@ -364,15 +402,30 @@ public class AsyncHttpAppender extends AbstractAppender {
         });
     }
 
-    private CompletableFuture<Void> sendBatchAndEventuallyRetry(byte[] batchData) {
-        return retryManager.run(() -> sendBatch(batchData));
+    private CompletableFuture<Void> sendBatchAndEventuallyRetry(Batch batch) {
+        return retryManager.run(() -> sendBatch(batch)).whenComplete((response, throwable) -> {
+            BatchCompletionType completionType = null;
+            if (response != null) {
+                completionType = new BatchDeliveredSuccess(response.status(), response.tries());
+            } else if (throwable instanceof HttpErrorResponseException errorResponseException) {
+                completionType = new BatchDeliveredError(errorResponseException.httpStatus(), errorResponseException.tries());
+            } else if (throwable instanceof HttpRetryManagerException retryManagerException) {
+                completionType = new BatchDeliveryFailed(retryManagerException, retryManagerException.tries());
+            } else if (throwable instanceof Exception exception) {
+                completionType = new BatchDeliveryFailed(exception, -1);
+            }
+
+            if (completionType != null) {
+                batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(this, batch, completionType));
+            }
+        }).thenApply(ignore -> null);
     }
 
-    private CompletableFuture<HttpResponseWrapper<Void>> sendBatch(byte[] batchData) {
+    private CompletableFuture<HttpStatus> sendBatch(Batch batch) {
         var requestBuilder = HttpRequest.newBuilder()
                 .uri(url)
                 .timeout(httpClientManager.readTimeout)
-                .method(method.name(), BodyPublishers.ofByteArray(batchData));
+                .method(method.name(), BodyPublishers.ofByteArray(batch.data));
 
         for (Property property : getPropertyArray()) {
             requestBuilder.header(property.getName(), property.evaluate(configuration.getStrSubstitutor()));
@@ -383,15 +436,21 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
 
         return httpClientManager.httpClient.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
-                .thenApply((response -> new HttpResponseWrapper<>(
-                        null,
-                        response.statusCode(),
-                        response.body())));
+                .thenApply((response -> new HttpStatus(response.statusCode(), response.body())));
     }
 
     private record HttpClientManagerData(Duration connectTimeout, Duration readTimeout, String httpClientSslConfigSupplier) {
         String managerName() {
             return HttpClientManager.class.getSimpleName() + "@" + this;
+        }
+    }
+
+    private static <T> T newInstanceFromConfiguredClassName(Class<T> baseClass, String className) {
+        try {
+            var clazz = Class.forName(className);
+            return baseClass.cast(clazz.getDeclaredConstructor().newInstance());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Cannot load" + baseClass.getSimpleName() + " implementation from '" + className + "'", e);
         }
     }
 
@@ -416,8 +475,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             HttpClientSslConfig httpClientSslConfig = null;
             if (managerData.httpClientSslConfigSupplier != null && !managerData.httpClientSslConfigSupplier.isEmpty()) {
                 try {
-                    var clazz = Class.forName(managerData.httpClientSslConfigSupplier);
-                    var supplier = (HttpClientSslConfigSupplier) clazz.getDeclaredConstructor().newInstance();
+                    var supplier = newInstanceFromConfiguredClassName(HttpClientSslConfigSupplier.class, managerData.httpClientSslConfigSupplier);
                     httpClientSslConfig = supplier.get();
                 } catch (Exception e) {
                     throw new IllegalArgumentException("Cannot load SSL configuration from '" + managerData.httpClientSslConfigSupplier + "'", e);
@@ -556,7 +614,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return httpClientManager.httpClientSslConfigSupplier;
     }
 
-    private byte[] createBatch(List<byte[]> events) {
+    private Batch createBatch(List<byte[]> events) {
         byte[] res = EMPTY_BYTE_ARRAY;
         if (!events.isEmpty()) {
             int totalSize = batchPrefix.length + batchSuffix.length;
@@ -591,6 +649,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             System.arraycopy(batchSuffix, 0, res, i0, batchSuffix.length);
         }
 
+        var uncompressedBytes = res.length;
         if (contentEncoding == ContentEncoding.GZIP) {
             try {
                 var bout = new ByteArrayOutputStream(256);
@@ -603,7 +662,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
         }
 
-        return res;
+        return new Batch(res, uncompressedBytes);
     }
 
     @Override
@@ -736,5 +795,18 @@ public class AsyncHttpAppender extends AbstractAppender {
                ", url=" + url +
                ", method=" + method +
                '}';
+    }
+
+    private static void defaultOnBatchCompletionEventListener(BatchCompletionEvent event) {
+        if (event.completionType instanceof BatchDeliveredError deliveredError) {
+            getStatusLogger().warn("Error delivering batch of {} bytes ({} bytes uncompressed): {}",
+                    event.bytesCompressed, event.bytesUncompressed, deliveredError.httpStatus);
+        } else if (event.completionType instanceof BatchDeliveryFailed deliveryFailed) {
+            getStatusLogger().warn("Delivery of batch with {} bytes ({} bytes uncompressed) failed",
+                    event.bytesCompressed, event.bytesUncompressed, deliveryFailed.exception);
+        } else if (event.completionType instanceof BatchDropped) {
+            getStatusLogger().warn("Dropping batch of {} bytes ({} bytes uncompressed) because the HTTP backend is not keeping up",
+                    event.bytesCompressed, event.bytesUncompressed);
+        }
     }
 }

@@ -19,6 +19,4 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-record HttpResponseWrapper<T>(T payload, int statusCode, String statusMessage) {
-
-}
+record HttpStatus(int code, String message) { }

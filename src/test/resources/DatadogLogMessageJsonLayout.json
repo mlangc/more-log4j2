@@ -1,7 +1,7 @@
 {
   "message": {
     "$resolver": "pattern",
-    "pattern": "%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"
+    "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"
   },
   "status": {
     "$resolver": "level",

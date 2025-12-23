@@ -19,13 +19,20 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-class HttpRequestFailedException extends HttpRetryManagerException {
-    HttpRequestFailedException(int tries, Throwable cause) {
-        super(tries, cause);
+class HttpErrorResponseException extends HttpRetryManagerException {
+    private final HttpStatus httpStatus;
+
+    HttpErrorResponseException(int tries, HttpStatus httpStatus) {
+        super(tries, null);
+        this.httpStatus = httpStatus;
+    }
+
+    public HttpStatus httpStatus() {
+        return httpStatus;
     }
 
     @Override
     public String getMessage() {
-        return "Unexpected error after " + tries() + " tries: " + getCause();
+        return "Unexpected http status after " + tries() + " tries: " + httpStatus;
     }
 }

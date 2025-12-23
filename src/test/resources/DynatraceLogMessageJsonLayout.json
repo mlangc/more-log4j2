@@ -9,17 +9,11 @@
 
   "message": {
     "$resolver": "pattern",
-    "pattern": "%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"
+    "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"
   },
 
   "level": {
     "$resolver": "level",
     "field": "name"
-  },
-
-  "java": {
-    "vm": "${java:vm}",
-    "os": "${java:os}",
-    "hw": "${java:hw}"
   }
 }

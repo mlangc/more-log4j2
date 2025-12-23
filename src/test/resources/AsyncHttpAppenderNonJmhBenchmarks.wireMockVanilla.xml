@@ -20,26 +20,23 @@
   -->
 
 <Configuration status="WARN">
-    <Properties>
-        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
-    </Properties>
     <Appenders>
         <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}">
-            <PatternLayout pattern="${pattern}"/>
+            <PatternLayout pattern="${sys:benchmarkLog4jPattern}"/>
         </AsyncHttp>
 
         <Console name="Console">
-            <PatternLayout pattern="${pattern}"/>
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"/>
         </Console>
     </Appenders>
     <Loggers>
         <Root level="info">
             <AppenderRef ref="AsyncHttp"/>
-        </Root>
 
-        <AppenderRef ref="Console">
-            <BurstFilter rate="0.1" maxBurst="3"/>
-        </AppenderRef>
+            <AppenderRef ref="Console">
+                <BurstFilter rate="0.1" maxBurst="3"/>
+            </AppenderRef>
+        </Root>
     </Loggers>
 </Configuration>
 

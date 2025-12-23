@@ -23,7 +23,6 @@ import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchSeparatorI
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.ContentEncoding;
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.RequestMethod;
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
-import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.http.LoggedResponse;
@@ -60,7 +59,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import javax.net.ssl.*;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.net.Socket;
@@ -71,12 +69,12 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
@@ -215,6 +213,7 @@ class AsyncHttpAppenderTest {
     @AfterEach
     void afterEach(TestInfo testInfo) {
         schedulesToCancelAfterTest.forEach(f -> f.cancel(false));
+        TestBatchCompletionListener.reset();
 
         STATUS_LOGGER.info(">".repeat(80));
         STATUS_LOGGER.info("Done executing '{}'", testInfo.getDisplayName());
@@ -233,6 +232,33 @@ class AsyncHttpAppenderTest {
     static AtomicLong sequence;
 
     static ScheduledThreadPoolExecutor executor;
+
+    static class TestBatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+        private static final ArrayDeque<AsyncHttpAppender.BatchCompletionEvent> lastBatchCompletionEvents = new ArrayDeque<>();
+
+        @Override
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent completionEvent) {
+            synchronized (TestBatchCompletionListener.class) {
+                lastBatchCompletionEvents.addLast(completionEvent);
+
+                if (lastBatchCompletionEvents.size() > 100) {
+                    lastBatchCompletionEvents.removeFirst();
+                }
+            }
+
+            STATUS_LOGGER.warn("completionEvent={}", completionEvent);
+        }
+
+        static List<AsyncHttpAppender.BatchCompletionEvent> getLastBatchCompletionEvents() {
+            synchronized(TestBatchCompletionListener.class) {
+                return List.copyOf(lastBatchCompletionEvents);
+            }
+        }
+
+        static synchronized void reset() {
+            lastBatchCompletionEvents.clear();
+        }
+    }
 
     @Test
     void shouldLoadBasicConfig() {
@@ -447,25 +473,13 @@ class AsyncHttpAppenderTest {
         );
     }
 
-    private static void configureLoopingScenario(int length, Supplier<MappingBuilder> newMapping, Consumer<MappingBuilder> adaptMapping) {
-        var scenarioName = "LoopingScenario";
-        for (int i = 0; i < length; i++) {
-            var state = i == 0 ? Scenario.STARTED : "state_" + i;
-            var nextState = i == length - 1 ? Scenario.STARTED : "state_" + (i + 1);
-
-            var mapping = newMapping.get().inScenario(scenarioName).whenScenarioStateIs(state).willSetStateTo(nextState);
-            adaptMapping.accept(mapping);
-            wireMockExt.stubFor(mapping);
-        }
-    }
-
     @ParameterizedTest
     @MethodSource("stressTestCases")
-    void shouldWorkReliablyUnderStress(StressTestCase testCase) throws IOException, InterruptedException {
+    void shouldWorkReliablyUnderStress(StressTestCase testCase) {
         var url = testCase.https ? wireMockHttpsUrl : wireMockHttpUrl;
 
         Runnable configureOkResponse = () ->
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withLogNormalRandomDelay(testCase.medianServerResponseMs, testCase.medianServerResponseSigma)));
+                wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withLogNormalRandomDelay(testCase.medianServerResponseMs, testCase.medianServerResponseSigma)));
 
         if (testCase.serverFailureRate <= 0) {
             configureOkResponse.run();
@@ -1121,30 +1135,94 @@ class AsyncHttpAppenderTest {
     }
 
     @Test
-    void droppedBatchesShouldBeConsistentWithDataSentToBackend() throws IOException {
+    void droppedBatchesShouldBeConsistentWithDataSentToBackend() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(250)));
 
-        var batchesDropped = new AtomicInteger();
         final var numLongMessages = 3;
         String longMessage;
-        try (var batchDroppedListener = AsyncHttpAppender.newDroppedBatchListener(batchesDropped::incrementAndGet)) {
-            STATUS_LOGGER.registerListener(STATUS_LOGGER.getFallbackListener());
-            STATUS_LOGGER.registerListener(batchDroppedListener);
-            try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.withSmallBatchAndBatchBufferSize.xml")) {
-                var batchBufferBytes = ((AsyncHttpAppender) context.getConfiguration().getAppender("AsyncHttp")).maxBatchBufferBytes();
-                var log = context.getLogger(getClass());
-                longMessage = "x".repeat(batchBufferBytes + 1);
+        try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.withSmallBatchAndBatchBufferSize.xml")) {
+            var batchBufferBytes = ((AsyncHttpAppender) context.getConfiguration().getAppender("AsyncHttp")).maxBatchBufferBytes();
+            var log = context.getLogger(getClass());
+            longMessage = "x".repeat(batchBufferBytes + 1);
 
-                for (int i = 0; i < numLongMessages; i++) {
-                    log.info(longMessage);
-                }
-            } finally {
-                STATUS_LOGGER.reset();
+            for (int i = 0; i < numLongMessages; i++) {
+                log.info(longMessage);
             }
         }
 
-        assertThat(batchesDropped).hasPositiveValue();
-        wireMockExt.verify(numLongMessages - batchesDropped.get(), postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo(longMessage)));
+        var batchesDropped = TestBatchCompletionListener.getLastBatchCompletionEvents().stream()
+                .filter(evt -> evt.completionType() instanceof AsyncHttpAppender.BatchDropped)
+                .count();
+
+        assertThat(batchesDropped).isPositive();
+        wireMockExt.verify(Math.toIntExact(numLongMessages - batchesDropped), postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo(longMessage)));
+    }
+
+    @Test
+    void shouldProperlyReportBatchCompletionEvents() {
+        var scenarioName = "okFailFailScenario";
+
+        wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
+                .willReturn(ok().withStatusMessage("OK"))
+                .whenScenarioStateIs(Scenario.STARTED)
+                .willSetStateTo("fail1"));
+
+        wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
+                .willReturn(aResponse().withStatus(507).withFault(Fault.MALFORMED_RESPONSE_CHUNK))
+                .whenScenarioStateIs("fail1")
+                .willSetStateTo("fail2"));
+
+        wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
+                .willReturn(badRequest().withStatusMessage("Bad Request"))
+                .whenScenarioStateIs("fail2")
+                .willSetStateTo(Scenario.STARTED));
+
+        var longMessage = "x".repeat(100);
+        try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.withSettingsToTestCompletionListener.xml")) {
+            var appender = (AsyncHttpAppender) context.getConfiguration().getAppender("AsyncHttp");
+            var log = context.getLogger(getClass());
+
+            log.info(longMessage);
+
+            Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                assertThat(TestBatchCompletionListener.getLastBatchCompletionEvents())
+                        .as("now=%s", Instant.now())
+                        .hasSize(1)
+                        .allSatisfy(evt -> {
+                            assertThat(evt.completionType()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, deliveredSuccess -> {
+                                assertThat(deliveredSuccess.httpStatus().code()).isEqualTo(200);
+                                assertThat(deliveredSuccess.tries()).isOne();
+                            });
+                        });
+            });
+
+            log.info(longMessage);
+
+            Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                assertThat(TestBatchCompletionListener.getLastBatchCompletionEvents())
+                        .hasSize(2)
+                        .last().satisfies(evt -> {
+                            assertThat(evt.completionType()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveryFailed.class, deliveryFailed -> {
+                                assertThat(deliveryFailed.exception()).isNotNull();
+                                assertThat(deliveryFailed.tries()).isOne();
+                            });
+                        });
+            });
+
+            log.info(longMessage);
+
+            Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                assertThat(TestBatchCompletionListener.getLastBatchCompletionEvents())
+                        .hasSize(3)
+                        .allSatisfy(evt -> assertThat(evt.source()).isSameAs(appender))
+                        .last().satisfies(evt -> {
+                            assertThat(evt.completionType()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredError.class, deliveredError -> {
+                                assertThat(deliveredError.httpStatus().code()).isEqualTo(400);
+                                assertThat(deliveredError.tries()).isOne();
+                            });
+                        });
+            });
+        }
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {

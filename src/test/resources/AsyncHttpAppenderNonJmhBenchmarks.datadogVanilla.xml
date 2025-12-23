@@ -37,7 +37,7 @@
         </AsyncHttp>
 
         <Console name="Console">
-            <PatternLayout pattern="${pattern}"/>
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"/>
         </Console>
     </Appenders>
     <Loggers>

@@ -20,6 +20,7 @@
 package com.github.mlangc.more.log4j2.appenders;
 
 import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.Config;
+import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.HttpStatusWithTries;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -81,8 +82,8 @@ class HttpRetryManagerTest {
     void shouldBehaveAsExpectedIfRetriesAreDisabled() {
         var retryManager = new HttpRetryManager(new Config(0, 5000, s -> s == 200, e -> false, r -> false), executor);
 
-        var success = new HttpResponseWrapper<>(42, 200, "OK");
-        var opsReturningSuccess = List.<Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>>of(
+        var success = new HttpStatus(200, "OK");
+        var opsReturningSuccess = List.<Supplier<CompletableFuture<HttpStatus>>>of(
                 () -> CompletableFuture.completedFuture(success),
                 () -> CompletableFuture.supplyAsync(() -> success),
                 () -> CompletableFuture.supplyAsync(() -> success, executor));
@@ -90,11 +91,11 @@ class HttpRetryManagerTest {
         for (var opReturningSuccess : opsReturningSuccess) {
             assertThat(retryManager.run(opReturningSuccess))
                     .succeedsWithin(1, TimeUnit.SECONDS)
-                    .isEqualTo(42);
+                    .isEqualTo(new HttpStatusWithTries(success, 1));
         }
 
-        var internalServerError = new HttpResponseWrapper<>(-1, 500, "Internal Server Error");
-        var opsReturningInternalServerError = List.<Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>>of(
+        var internalServerError = new HttpStatus(500, "Internal Server Error");
+        var opsReturningInternalServerError = List.<Supplier<CompletableFuture<HttpStatus>>>of(
                 () -> CompletableFuture.completedFuture(internalServerError),
                 () -> CompletableFuture.supplyAsync(() -> internalServerError),
                 () -> CompletableFuture.supplyAsync(() -> internalServerError, executor));
@@ -103,12 +104,16 @@ class HttpRetryManagerTest {
             assertThat(retryManager.run(opReturningServerError))
                     .completesExceptionallyWithin(1, TimeUnit.SECONDS)
                     .withThrowableThat()
-                    .withMessageContaining(internalServerError.statusMessage())
-                    .withMessageContaining("" + internalServerError.statusCode());
+                    .havingCause()
+                    .isInstanceOfSatisfying(HttpErrorResponseException.class, e -> {
+                        assertThat(e.httpStatus().code()).isEqualTo(500);
+                        assertThat(e.httpStatus().message()).isEqualTo("Internal Server Error");
+                        assertThat(e.tries()).isOne();
+                    });
         }
 
         var ioException = new IOException("Random IO error");
-        var opsReturningIoError = List.<Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>>of(
+        var opsReturningIoError = List.<Supplier<CompletableFuture<HttpStatus>>>of(
                 () -> CompletableFuture.failedFuture(ioException),
                 () -> CompletableFuture.supplyAsync(() -> {
                     throw new UncheckedIOException(ioException);
@@ -120,6 +125,8 @@ class HttpRetryManagerTest {
             assertThat(retryManager.run(opReturningIoError))
                     .completesExceptionallyWithin(1, TimeUnit.SECONDS)
                     .withThrowableThat()
+                    .havingCause()
+                    .isInstanceOf(HttpRequestFailedException.class)
                     .havingRootCause()
                     .isSameAs(ioException);
         }
@@ -128,12 +135,12 @@ class HttpRetryManagerTest {
     @ParameterizedTest
     @ValueSource(doubles = {0.1, 0.05, 0.01, 0.005, 0.004})
     void shouldEventuallyReturnResultWithNonZeroChangeForSuccessAndInfiniteRetires(double chanceOfSuccess) {
-        var success = new HttpResponseWrapper<>(42, 200, "OK");
-        var serviceUnavailable = new HttpResponseWrapper<>(-1, 503, "Service Unavailable");
+        var success = new HttpStatus(200, "OK");
+        var serviceUnavailable = new HttpStatus(503, "Service Unavailable");
         var exception = new RuntimeException("Upsala");
 
         Random random = new Random(42);
-        Supplier<CompletableFuture<HttpResponseWrapper<Integer>>> operation = () -> {
+        Supplier<CompletableFuture<HttpStatus>> operation = () -> {
             if (random.nextDouble() < chanceOfSuccess) {
                 return CompletableFuture.supplyAsync(() -> success, executor);
             } else if (random.nextBoolean()) {
@@ -144,22 +151,26 @@ class HttpRetryManagerTest {
         };
 
         var retryManager = new HttpRetryManager(new Config(Integer.MAX_VALUE, 10, s -> s == 200, e -> true, r -> true), executor);
-        assertThat(retryManager.run(operation)).succeedsWithin(5, TimeUnit.SECONDS).isEqualTo(42);
+
+        assertThat(retryManager.run(operation)).succeedsWithin(5, TimeUnit.SECONDS).satisfies(s -> {
+            assertThat(s.status()).isEqualTo(success);
+            assertThat(s.tries()).isPositive();
+        });
     }
 
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 2, 3})
     void shouldRespectMaxRetries(int maxRetries) {
-        var serviceUnavailable = CompletableFuture.completedFuture(new HttpResponseWrapper<>(-1, 503, "Service Unavailable"));
-        var exception = CompletableFuture.<HttpResponseWrapper<Integer>>failedFuture(new RuntimeException("Upsala"));
-        var success = CompletableFuture.completedFuture(new HttpResponseWrapper<>(42, 200, "Juhuu"));
+        var serviceUnavailable = CompletableFuture.completedFuture(new HttpStatus(503, "Service Unavailable"));
+        var exception = CompletableFuture.<HttpStatus>failedFuture(new RuntimeException("Upsala"));
+        var success = CompletableFuture.completedFuture(new HttpStatus(200, "Juhuu"));
 
-        var operation = new Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>() {
+        var operation = new Supplier<CompletableFuture<HttpStatus>>() {
             final AtomicInteger invocations = new AtomicInteger();
             final Random random = new Random(999);
 
             @Override
-            public CompletableFuture<HttpResponseWrapper<Integer>> get() {
+            public CompletableFuture<HttpStatus> get() {
                 if (invocations.getAndIncrement() <= maxRetries) {
                     return random.nextBoolean() ? serviceUnavailable : exception;
                 } else {
@@ -183,21 +194,21 @@ class HttpRetryManagerTest {
         var retryableException = new RuntimeException("Upsala");
         var retryManager = new HttpRetryManager(new Config(3, 1, s -> s == 200, e -> e == retryableException, r -> false), executor);
 
-        var operation = new Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>() {
+        var operation = new Supplier<CompletableFuture<HttpStatus>>() {
             final AtomicBoolean invoked = new AtomicBoolean();
             RuntimeException exception = retryableException;
 
             @Override
-            public CompletableFuture<HttpResponseWrapper<Integer>> get() {
+            public CompletableFuture<HttpStatus> get() {
                 if (invoked.compareAndSet(false, true)) {
                     return CompletableFuture.supplyAsync(() -> { throw exception; });
                 } else {
-                    return CompletableFuture.completedFuture(new HttpResponseWrapper<>(42, 200, "OK"));
+                    return CompletableFuture.completedFuture(new HttpStatus(200, "OK"));
                 }
             }
         };
 
-        assertThat(retryManager.run(operation)).succeedsWithin(1, TimeUnit.SECONDS).isEqualTo(42);
+        assertThat(retryManager.run(operation)).succeedsWithin(1, TimeUnit.SECONDS);
 
         operation.exception = new RuntimeException("Not retryable");
         operation.invoked.set(false);
@@ -207,44 +218,44 @@ class HttpRetryManagerTest {
 
     @Test
     void shouldRespectRetryResponsePredicate() {
-        var retryableResponse = new HttpResponseWrapper<>(-1, 503, "Service Unavailable");
-        var retryManager = new HttpRetryManager(new Config(3, 1, s -> s == 200, e -> false, s -> s == retryableResponse.statusCode()), executor);
+        var retryableResponse = new HttpStatus(503, "Service Unavailable");
+        var retryManager = new HttpRetryManager(new Config(3, 1, s -> s == 200, e -> false, s -> s == retryableResponse.code()), executor);
 
-        var operation = new Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>() {
+        var operation = new Supplier<CompletableFuture<HttpStatus>>() {
             final AtomicBoolean invoked = new AtomicBoolean();
-            HttpResponseWrapper<Integer> errorResponse = retryableResponse;
+            HttpStatus errorResponse = retryableResponse;
 
             @Override
-            public CompletableFuture<HttpResponseWrapper<Integer>> get() {
+            public CompletableFuture<HttpStatus> get() {
                 if (invoked.compareAndSet(false, true)) {
                     return CompletableFuture.supplyAsync(() -> errorResponse);
                 } else {
-                    return CompletableFuture.completedFuture(new HttpResponseWrapper<>(42, 200, "OK"));
+                    return CompletableFuture.completedFuture(new HttpStatus(200, "OK"));
                 }
             }
         };
 
-        assertThat(retryManager.run(operation)).succeedsWithin(1, TimeUnit.SECONDS).isEqualTo(42);
+        assertThat(retryManager.run(operation)).succeedsWithin(1, TimeUnit.SECONDS);
 
-        operation.errorResponse = new HttpResponseWrapper<>(-1, 400, "Bad Request");
+        operation.errorResponse = new HttpStatus(400, "Bad Request");
         operation.invoked.set(false);
-        assertThat(retryManager.run(operation)).completesExceptionallyWithin(1, TimeUnit.SECONDS).withThrowableThat().havingRootCause()
+        assertThat(retryManager.run(operation)).completesExceptionallyWithin(1, TimeUnit.SECONDS).withThrowableThat()
                 .withMessageContaining("Bad Request")
                 .withMessageContaining("400");
     }
 
     @Test
     void shouldRespectStatusCodeSuccessPredicate() {
-        var responseOk = CompletableFuture.completedFuture(new HttpResponseWrapper<>(313, 200, "Ok"));
-        var responseNok = CompletableFuture.completedFuture(new HttpResponseWrapper<>(-1, 500, "Internal Server Error"));
+        var responseOk = CompletableFuture.completedFuture(new HttpStatus(200, "Ok"));
+        var responseNok = CompletableFuture.completedFuture(new HttpStatus(500, "Internal Server Error"));
         var retryManagerOk = new HttpRetryManager(new Config(1, 1, s -> s == 200, e -> true, r -> true), executor);
         var retryManagerNok = new HttpRetryManager(new Config(1, 1, s -> s == 202, e -> true, r -> true), executor);
 
-        var operation = new Supplier<CompletableFuture<HttpResponseWrapper<Integer>>>() {
+        var operation = new Supplier<CompletableFuture<HttpStatus>>() {
             final AtomicBoolean invoked = new AtomicBoolean();
 
             @Override
-            public CompletableFuture<HttpResponseWrapper<Integer>> get() {
+            public CompletableFuture<HttpStatus> get() {
                 if (invoked.compareAndSet(false, true)) {
                     return responseNok;
                 } else {
@@ -253,7 +264,7 @@ class HttpRetryManagerTest {
             }
         };
 
-        assertThat(retryManagerOk.run(operation)).succeedsWithin(1, TimeUnit.SECONDS).isEqualTo(313);
+        assertThat(retryManagerOk.run(operation)).succeedsWithin(1, TimeUnit.SECONDS);
 
         operation.invoked.set(false);
         assertThat(retryManagerNok.run(operation)).completesExceptionallyWithin(1, TimeUnit.SECONDS)
@@ -263,7 +274,7 @@ class HttpRetryManagerTest {
     @Test
     void shouldRespectDisableRetries() throws InterruptedException {
         var retryManager = new HttpRetryManager(new Config(Integer.MAX_VALUE, 1, s -> s == 200, e -> true, s -> true), executor);
-        var wouldRetryForever = retryManager.run(() -> CompletableFuture.supplyAsync(() -> new HttpResponseWrapper<>(-1, 500, "Ouch")));
+        var wouldRetryForever = retryManager.run(() -> CompletableFuture.supplyAsync(() -> new HttpStatus(500, "Ouch")));
 
         Thread.sleep(5); // wait a bit, so that the retry loop can play out a bit
         retryManager.disableRetries();
