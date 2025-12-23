@@ -21,27 +21,25 @@
 
 <Configuration status="WARN">
     <Properties>
-        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
     </Properties>
     <Appenders>
-        <AsyncHttp name="AsyncHttp" url="https://http-intake.logs.datadoghq.eu/api/v2/logs"
-                   batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
-                   batchPrefix="[" batchSeparator="," batchSuffix="]" maxBatchBytes="4500000" contentEncoding="gzip"
-                   httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
+        <Http name="Datadog" url="https://http-intake.logs.datadoghq.eu/api/v2/logs">
             <Property name="DD-API-KEY" value="${env:DATADOG_API_KEY}"/>
             <Property name="Content-Type" value="application/json"/>
+
             <JsonTemplateLayout eventTemplateUri="classpath:DatadogLogMessageJsonLayout.json">
                 <EventTemplateAdditionalField
                         key="message"
                         format="JSON"
                         value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
 
-                <EventTemplateAdditionalField key="ddtags" value="env:perf_test"/>
-                <EventTemplateAdditionalField key="ddsource" value="AsyncHttpAppender.perf_test"/>
-                <EventTemplateAdditionalField key="hostname" value="robotnik-m4"/>
-                <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
+                <EventTemplateAdditionalField key="ddtags" value="test:test"/>
+                <EventTemplateAdditionalField key="ddsource" value="demo"/>
+                <EventTemplateAdditionalField key="hostname" value="demo"/>
+                <EventTemplateAdditionalField key="service" value="demo"/>
             </JsonTemplateLayout>
-        </AsyncHttp>
+        </Http>
 
         <Console name="Console">
             <PatternLayout pattern="${pattern}"/>
@@ -49,11 +47,8 @@
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="AsyncHttp"/>
-
-            <AppenderRef ref="Console">
-                <BurstFilter rate="0.1" maxBurst="3"/>
-            </AppenderRef>
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Datadog"/>
         </Root>
     </Loggers>
 </Configuration>

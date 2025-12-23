@@ -20,13 +20,17 @@
   -->
 
 <Configuration status="WARN">
+    <Properties>
+        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
+    </Properties>
+
     <Appenders>
         <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}">
-            <PatternLayout pattern="${sys:benchmarkLog4jPattern}"/>
+            <PatternLayout pattern="${pattern}"/>
         </AsyncHttp>
 
         <Console name="Console">
-            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"/>
+            <PatternLayout pattern="${pattern}"/>
         </Console>
     </Appenders>
     <Loggers>

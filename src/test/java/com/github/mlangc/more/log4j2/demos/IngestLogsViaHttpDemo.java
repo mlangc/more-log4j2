@@ -23,24 +23,18 @@ import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 
-import java.time.Duration;
-
-public class IngestLogsIntoDynatraceViaAsyncHttpDemo {
+public class IngestLogsViaHttpDemo {
     public static void main(String[] args) {
-        try (LoggerContext loggerContext = TestHelpers.loggerContextFromTestResource("IngestLogsViaAsyncHttpAppenderConfig.xml")) {
-            ExtendedLogger log = loggerContext.getLogger(IngestLogsIntoDynatraceViaAsyncHttpDemo.class);
+        try (LoggerContext loggerContext = TestHelpers.loggerContextFromTestResource("IngestLogsIntoDatadogViaAsyncHttpAppenderConfig.xml")) {
+            ExtendedLogger log = loggerContext.getLogger(IngestLogsViaHttpDemo.class);
 
-            long totalNanos = 0L;
-            int numLogs = 10_000;
+            int numLogs = 500;
 
-            long t0 = System.nanoTime();
             for (int logs = 0; logs < numLogs; logs++) {
                 log.info("{} log messages so far have been logged", logs + 1);
             }
 
-            totalNanos += System.nanoTime() - t0;
-            double avgLogsPerSec = (double) numLogs / (totalNanos * 1e-9);
-            log.info("logged {} logs in {} at {} logs per second", numLogs, Duration.ofNanos(totalNanos), avgLogsPerSec);
+            log.info("All done");
         }
     }
 }

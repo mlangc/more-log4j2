@@ -6,12 +6,6 @@
       "rounded": true
     }
   },
-
-  "message": {
-    "$resolver": "pattern",
-    "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"
-  },
-
   "level": {
     "$resolver": "level",
     "field": "name"

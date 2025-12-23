@@ -24,10 +24,23 @@
         <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
     </Properties>
     <Appenders>
-        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}">
-            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
-            <Property name="Content-Type" value="application/jsonl"/>
-            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json"/>
+        <AsyncHttp name="Datadog" url="https://http-intake.logs.datadoghq.eu/api/v2/logs"
+                   batchPrefix="[" batchSeparator="," batchSuffix="]" maxBatchBytes="4500000" contentEncoding="gzip"
+                   httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
+            <Property name="DD-API-KEY" value="${env:DATADOG_API_KEY}"/>
+            <Property name="Content-Type" value="application/json"/>
+
+            <JsonTemplateLayout eventTemplateUri="classpath:DatadogLogMessageJsonLayout.json">
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <EventTemplateAdditionalField key="ddtags" value="test:test"/>
+                <EventTemplateAdditionalField key="ddsource" value="demo"/>
+                <EventTemplateAdditionalField key="hostname" value="demo"/>
+                <EventTemplateAdditionalField key="service" value="demo"/>
+            </JsonTemplateLayout>
         </AsyncHttp>
 
         <Console name="Console">
@@ -37,7 +50,7 @@
     <Loggers>
         <Root level="info">
             <AppenderRef ref="Console"/>
-            <AppenderRef ref="Dynatrace"/>
+            <AppenderRef ref="Datadog"/>
         </Root>
     </Loggers>
 </Configuration>
