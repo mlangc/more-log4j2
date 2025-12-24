@@ -48,12 +48,12 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         new BenchmarkTemplate() {
             @Override
             LoadCfg loadConfig() {
-                return new LoadCfg(5000, 5000);
+                return new LoadCfg(1000, 1000);
             }
 
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.grafanaOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.grafanaLokiV1PushOptimized.xml";
             }
 
             @Override
@@ -160,6 +160,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                                 logLines.increment();
                             }
                         }
+
+                        log.info("Stopping...");
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new UncheckedInterruptedException(e);

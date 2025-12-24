@@ -26,7 +26,9 @@ import java.util.List;
 
 public class IngestLogsViaHttpDemo {
     private static final List<String> DEMO_CONFIG_PATHS = List.of(
-            "IngestLogsViaHttpDemo.grafanaOltpAsyncHttpConfig.xml"/*,
+            "IngestLogsViaHttpDemo.grafanaLokiV1PushAsyncHttpConfig.xml"/*,
+            "IngestLogsViaHttpDemo.grafanaLokiV1PushHttpConfig.xml",
+            "IngestLogsViaHttpDemo.grafanaOltpAsyncHttpConfig.xml",
             "IngestLogsViaHttpDemo.datadogHttpConfig.xml",
             "IngestLogsViaHttpDemo.datadogAsyncHttpConfig.xml",
             "IngestLogsViaHttpDemo.dynatraceHttpConfig.xml",

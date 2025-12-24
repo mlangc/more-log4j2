@@ -21,25 +21,15 @@
 
 <Configuration status="WARN">
     <Properties>
-        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
     </Properties>
     <Appenders>
-        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" contentEncoding="gzip"
+        <AsyncHttp name="Grafana" url="https://logs-prod-012.grafana.net/loki/api/v1/push"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
-                   maxBatchBytes="10000000" maxBatchLogEvents="50000" httpSuccessCodes="204" httpRetryCodes="429,503">
-            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
-            <Property name="Content-Type" value="application/jsonl"/>
-            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
-                <EventTemplateAdditionalField
-                        key="message"
-                        format="JSON"
-                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
-
-                <EventTemplateAdditionalField key="env" value="perf_test"/>
-                <EventTemplateAdditionalField key="source" value="AsyncHttpAppender.perf_test"/>
-                <EventTemplateAdditionalField key="hostname" value="test"/>
-                <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
-            </JsonTemplateLayout>
+                   batchPrefix='{"streams": [' batchSeparator="," batchSuffix="]}">
+            <Property name="Content-Type" value="application/json"/>
+            <Property name="Authorization" value="Basic ${env:GRAFANA_LOKI_TOKEN}"/>
+            <JsonTemplateLayout eventTemplateUri="classpath:GrafanaLokiV1PushLogSingleMessageJsonLayout.json"/>
         </AsyncHttp>
 
         <Console name="Console">
@@ -48,7 +38,7 @@
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="Dynatrace"/>
+            <AppenderRef ref="Grafana"/>
 
             <AppenderRef ref="Console">
                 <BurstFilter rate="0.1" maxBurst="3"/>

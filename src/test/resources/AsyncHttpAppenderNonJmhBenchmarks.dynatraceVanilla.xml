@@ -37,7 +37,7 @@
 
                 <EventTemplateAdditionalField key="env" value="perf_test"/>
                 <EventTemplateAdditionalField key="source" value="AsyncHttpAppender.perf_test"/>
-                <EventTemplateAdditionalField key="hostname" value="robotnik-m4"/>
+                <EventTemplateAdditionalField key="hostname" value="test"/>
                 <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
             </JsonTemplateLayout>
         </AsyncHttp>
