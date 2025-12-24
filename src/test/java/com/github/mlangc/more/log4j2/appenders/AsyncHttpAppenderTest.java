@@ -1225,6 +1225,13 @@ class AsyncHttpAppenderTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {300, 400, 500})
+    void shouldRespectMaxBatchBytes() {
+        // TODO
+
+    }
+
     private void shouldRespectAppenderFilters(LoggerContext context) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 

@@ -2,10 +2,7 @@
   "streams": [
     {
       "stream": {
-        "service": "test-app",
-        "env": "perf_test",
-        "hostname": "test",
-        "source": "AsyncHttpAppender.perf_test"
+        "service": "test-app"
       },
       "values": [
         [
@@ -15,6 +12,10 @@
           }, {
           "$resolver": "pattern",
           "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2} - %msg%n"
+        }, {
+          "env": "perf_test",
+          "hostname": "test",
+          "source": "AsyncHttpAppender.perf_test"
         }
         ]
       ]

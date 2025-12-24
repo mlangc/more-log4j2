@@ -33,6 +33,7 @@ import org.apache.logging.log4j.core.util.Log4jThreadFactory;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.IntStream;
 
@@ -67,16 +68,51 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         private static final Logger LOG = LogManager.getLogger(BatchCompletionListener.class);
         static volatile AtomicBoolean stopFlag;
 
-        @Override
-        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent completionEvent) {
-            AsyncHttpAppender.logBatchCompletionEvent(LOG, ForkJoinPool.commonPool(), completionEvent);
+        static final AtomicLong completedBytes = new AtomicLong();
+        static final AtomicLong completedBytesUncompressed = new AtomicLong();
+        static final AtomicLong completedLogEvents = new AtomicLong();
+        static final AtomicBoolean scheduleInstalled = new AtomicBoolean();
+        static ScheduledFuture<?> schedule;
 
-            if (completionEvent.completionType() instanceof AsyncHttpAppender.BatchDropped) {
+        private static final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
+                Log4jThreadFactory.createDaemonThreadFactory(AsyncHttpAppender.BatchCompletionListener.class.getSimpleName()));
+
+        public BatchCompletionListener() {
+            if (scheduleInstalled.compareAndSet(false, true)) {
+                schedule = executor.scheduleAtFixedRate(BatchCompletionListener::processAndResetStatistics, 1, 1, TimeUnit.SECONDS);
+            }
+        }
+
+        private static void processAndResetStatistics() {
+            var localStopFlag = stopFlag;
+            if (localStopFlag.get() && schedule != null) {
+                schedule.cancel(false);
+                schedule = null;
+                return;
+            }
+
+            LOG.info("completedBytes={}, completedBytesUncompressed={}, completedLogEvents={}",
+                    completedBytes.get(), completedBytesUncompressed.get(), completedLogEvents.get());
+
+            completedBytes.set(0);
+            completedBytesUncompressed.set(0);
+            completedLogEvents.set(0);
+        }
+
+        @Override
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent event) {
+            AsyncHttpAppender.logBatchCompletionEvent(LOG, ForkJoinPool.commonPool(), event);
+
+            if (event.completionType() instanceof AsyncHttpAppender.BatchDropped) {
                 var localStopFlag = stopFlag;
 
                 if (localStopFlag.compareAndSet(false, true)) {
                     out.printf("Stopping benchmark since a batch has been dropped%n");
                 }
+            } else if (event.completionType() instanceof AsyncHttpAppender.BatchDeliveredSuccess) {
+                completedBytes.addAndGet(event.bytesEffective());
+                completedLogEvents.addAndGet(event.logEvents());
+                completedBytesUncompressed.addAndGet(event.bytesUncompressed());
             }
         }
     }
