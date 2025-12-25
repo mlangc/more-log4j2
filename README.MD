@@ -214,31 +214,31 @@ or you are extremely sensitive about allocations.
 
 #### AsyncHttpAppenderConfiguration
 
-| Parameter                       | Type                                                | Default Value   | Required | Description                                      | Expert Only |
-|---------------------------------|-----------------------------------------------------|-----------------|----------|--------------------------------------------------|-------------|
-| name                            | String                                              | -               | Yes      | Appender name                                    | No          |
-| url                             | URI                                                 | -               | Yes      | Target HTTP endpoint                             | No          |
-| lingerMs                        | int                                                 | 5000            | No       | Max time to wait before sending a batch          | No          |
-| maxBatchBytes                   | int                                                 | 250_000         | No       | Max size of a batch                              | No          |
-| maxBatchLogEvents               | int                                                 | 1000            | No       | Max number of log events per batch               | No          |
-| connectTimeoutMillis            | int                                                 | 10_000          | No       | HTTP connection timeout                          | No          |
-| readTimeoutMillis               | int                                                 | 10_000          | No       | HTTP read timeout                                | No          |
-| maxInFlight                     | int                                                 | 5               | No       | Max concurrent HTTP requests                     | No          |
-| method                          | HTTP method                                         | POST            | No       | HTTP method (POST/PUT)                           | No          |
-| batchPrefix                     | String                                              | ""              | No       | Prefix for each batch                            | No          |
-| batchSeparator                  | String                                              | "\n"            | No       | Separator between log events in a batch          | No          |
-| batchSuffix                     | String                                              | ""              | No       | Suffix for each batch                            | No          |
-| httpSuccessCodes                | String                                              | 200,202,204     | No       | HTTP status codes considered successful          | No          |
-| httpRetryCodes                  | String                                              | 500,502,503,504 | No       | HTTP status codes that trigger a retry           | No          |
-| retryOnIoError                  | boolean                                             | true            | No       | Retry on I/O errors                              | No          |
-| retries                         | int                                                 | 5               | No       | Number of HTTP retry attempts                    | No          |
-| contentEncoding                 | encoding (identity or gzip)                         | identity        | No       | Batch content encoding (identity/gzip)           | No          |
-| properties                      | Property[]                                          | -               | No       | Additional HTTP headers                          | No          |
-| ignoreExceptions                | boolean                                             | true            | No       | Ignore exceptions during logging                 | Yes         |
-| maxBatchBufferBytes             | int                                                 | TODO            | No       | Max total buffer size for batches                | Yes         |
-| batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing      | No       | Strategy for inserting separators between events | Yes         |
-| httpClientSslConfigSupplier     | String                                              | null            | No       | Class name for custom SSL config supplier        | Yes         |
-| batchCompletionListener         | String                                              | null            | No       | Class name for custom batch completion listener  | Yes         |
+| Parameter                       | Type                                                | Default Value      | Required | Description                                      | Expert Only |
+|---------------------------------|-----------------------------------------------------|--------------------|----------|--------------------------------------------------|-------------|
+| name                            | String                                              | -                  | Yes      | Appender name                                    | No          |
+| url                             | URI                                                 | -                  | Yes      | Target HTTP endpoint                             | No          |
+| lingerMs                        | int                                                 | 5000               | No       | Max time to wait before sending a batch          | No          |
+| maxBatchBytes                   | int                                                 | 250_000            | No       | Max size of a batch                              | No          |
+| maxBatchLogEvents               | int                                                 | 1000               | No       | Max number of log events per batch               | No          |
+| connectTimeoutMillis            | int                                                 | 10_000             | No       | HTTP connection timeout                          | No          |
+| readTimeoutMillis               | int                                                 | 10_000             | No       | HTTP read timeout                                | No          |
+| maxInFlight                     | int                                                 | 5                  | No       | Max concurrent HTTP requests                     | No          |
+| method                          | HTTP method                                         | POST               | No       | HTTP method (POST/PUT)                           | No          |
+| batchPrefix                     | String                                              | ""                 | No       | Prefix for each batch                            | No          |
+| batchSeparator                  | String                                              | "\n"               | No       | Separator between log events in a batch          | No          |
+| batchSuffix                     | String                                              | ""                 | No       | Suffix for each batch                            | No          |
+| httpSuccessCodes                | String                                              | 200, 202, 204      | No       | HTTP status codes considered successful          | No          |
+| httpRetryCodes                  | String                                              | 500, 502, 503, 504 | No       | HTTP status codes that trigger a retry           | No          |
+| retryOnIoError                  | boolean                                             | true               | No       | Retry on I/O errors                              | No          |
+| retries                         | int                                                 | 5                  | No       | Number of HTTP retry attempts                    | No          |
+| contentEncoding                 | encoding (identity or gzip)                         | identity           | No       | Batch content encoding (identity/gzip)           | No          |
+| properties                      | Property[]                                          | -                  | No       | Additional HTTP headers                          | No          |
+| ignoreExceptions                | boolean                                             | true               | No       | Ignore exceptions during logging                 | Yes         |
+| maxBatchBufferBytes             | int                                                 | TODO               | No       | Max total buffer size for batches                | Yes         |
+| batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing         | No       | Strategy for inserting separators between events | Yes         |
+| httpClientSslConfigSupplier     | String                                              | null               | No       | Class name for custom SSL config supplier        | Yes         |
+| batchCompletionListener         | String                                              | null               | No       | Class name for custom batch completion listener  | Yes         |
 
 ## Additional Notes
 
