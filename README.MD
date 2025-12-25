@@ -218,6 +218,7 @@ or you are extremely sensitive about allocations.
 |---------------------------------|-----------------------------------------------------|--------------------|----------|--------------------------------------------------|-------------|
 | name                            | String                                              | -                  | Yes      | Appender name                                    | No          |
 | url                             | URI                                                 | -                  | Yes      | Target HTTP endpoint                             | No          |
+| layout (nested element)         | Layout                                              | -                  | Yes      | A layout to format log messages                  | No          |
 | lingerMs                        | int                                                 | 5000               | No       | Max time to wait before sending a batch          | No          |
 | maxBatchBytes                   | int                                                 | 250_000            | No       | Max size of a batch                              | No          |
 | maxBatchLogEvents               | int                                                 | 1000               | No       | Max number of log events per batch               | No          |
@@ -231,9 +232,10 @@ or you are extremely sensitive about allocations.
 | httpSuccessCodes                | String                                              | 200, 202, 204      | No       | HTTP status codes considered successful          | No          |
 | httpRetryCodes                  | String                                              | 500, 502, 503, 504 | No       | HTTP status codes that trigger a retry           | No          |
 | retryOnIoError                  | boolean                                             | true               | No       | Retry on I/O errors                              | No          |
-| retries                         | int                                                 | 5                  | No       | Number of HTTP retry attempts                    | No          |
+| retries                         | int                                                 | 5                  | No       | Number of retry attempts                         | No          |
 | contentEncoding                 | encoding (identity or gzip)                         | identity           | No       | Batch content encoding (identity/gzip)           | No          |
-| properties                      | Property[]                                          | -                  | No       | Additional HTTP headers                          | No          |
+| filter (nested)                 | Filter                                              | -                  | No       | An optional filter                               | No          |
+| properties (nested)             | Property[]                                          | -                  | No       | Additional HTTP headers                          | No          |
 | ignoreExceptions                | boolean                                             | true               | No       | Ignore exceptions during logging                 | Yes         |
 | maxBatchBufferBytes             | int                                                 | TODO               | No       | Max total buffer size for batches                | Yes         |
 | batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing         | No       | Strategy for inserting separators between events | Yes         |
