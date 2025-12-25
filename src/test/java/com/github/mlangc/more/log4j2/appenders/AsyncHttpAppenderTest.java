@@ -1305,19 +1305,6 @@ class AsyncHttpAppenderTest {
         assertThat(numSmallerThanNeeded).isLessThanOrEqualTo(1);
     }
 
-    @Disabled
-    @Test
-    void shouldEventuallyConnectEvenIfBackendIsNotReachableOnStartup() {
-        // TODO
-    }
-
-    @Disabled
-    @Test
-    void shouldSelfHealIfBackendIsTmpUnavailable() {
-        // TODO
-    }
-
-
     private void shouldRespectAppenderFilters(LoggerContext context) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 
