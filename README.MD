@@ -1,7 +1,7 @@
 # more-log4j2
+
 [![Maven Central](https://img.shields.io/maven-central/v/com.github.mlangc/more-log4j2.svg?label=Maven%20Central)](https://search.maven.org/artifact/com.github.mlangc/more-log4j2)
 [![Java 8 or higher](https://img.shields.io/badge/JDK-8%2B-007396)](https://docs.oracle.com/javase/8/)
-
 
 A collection of plugins for log4j2.
 
@@ -12,11 +12,19 @@ the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at 
 
 ## Features
 
+* Filters
+    * [RoutingFilter](#Routing-Filter)
+    * [ThrottlingFilter](#Throttling-Filter)
+    * [AcceptAllFilter](#AcceptAllFilter--NeutralFilter)
+    * [NeutralFilter](#AcceptAllFilter--NeutralFilter)
+* Appenders
+    * [AsyncHttpAppender](#Async-HttpAppender)
+
 ### Routing Filter
 
-I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases, that go beyond what you can do with
-standard log4j2, unless you fall back to using [ScriptFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#Script),
-or write a plugin, as I did.
+I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases, that go beyond what you can do with standard
+log4j2, unless you fall back to using [ScriptFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#Script), or write a
+plugin, as I did.
 
 #### Use Case I: Marker Based Log Throttling
 
@@ -110,20 +118,26 @@ are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` ar
 In Java, the behaviour of the filter can be summarized as follows:
 
 ```java
-for (var route : routes) {
-    if (route.accepts(event)) {
-        route.apply(event);
-        return;
-    }
-}
+for(var route :routes){
+        if(route.
 
-defaultRoute.apply(event);
+accepts(event)){
+        route.
+
+apply(event);
+        return;
+                }
+                }
+
+                defaultRoute.
+
+apply(event);
 ```
 
-Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, I'd suggest to use the
-order that makes your config the most readable. Putting the most commonly taken routes first might save you a few CPU cycles,
-however, apart from extreme cases, where millions of logs are filtered down to a handful of lines every second, this won't 
-make any difference.
+Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, I'd suggest to use the order
+that makes your config the most readable. Putting the most commonly taken routes first might save you a few CPU cycles, however,
+apart from extreme cases, where millions of logs are filtered down to a handful of lines every second, this won't make any
+difference.
 
 ### AcceptAllFilter & NeutralFilter
 
@@ -133,31 +147,38 @@ especially useful in connection with `RoutingFilter`.
 
 ## Throttling Filter
 
-`ThrottlingFilter` is an alternative to [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter),
-that provides roughly the same functionality, but with less overhead and without object allocations. Let's look at a few
-examples:
+`ThrottlingFilter` is an alternative to [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter), that
+provides roughly the same functionality, but with less overhead and without object allocations. Let's look at a few examples:
 
 #### Throttling WARN and below to at most one log per second:
+
 ```xml
+
 <ThrottlingFilter interval="1" timeUnit="SECONDS" maxEvents="1"/>
 ```
 
 This is roughly what you get with
+
 ```xml
+
 <BurstFilter rate="1" maxBurst="1"/>
 ```
 
 #### Throttling DEBUG to at most 1 log per second, but allowing bursts up to 10
+
 ```xml
+
 <ThrottlingFilter interval="10" timeUnit="SECONDS" maxEvents="10" level="debug"/>
 ```
 
 This is roughly what you get with
+
 ```xml
+
 <BurstFilter rate="1" maxBurst="10" level="debug"/>
 ```
 
-### ThrottlingFilter Configuration
+#### ThrottlingFilter Configuration
 
 | Attribute | Type                           | Default | Description                                                     |
 |-----------|--------------------------------|---------|-----------------------------------------------------------------|
@@ -168,10 +189,10 @@ This is roughly what you get with
 
 Conceptually, `ThrottlingFilter` divides the timeline into fixed intervals according to the `interval` configuration above, and
 allows at most `maxEvents` logs in each interval. Note that this is subtly different from the `BurstFilter`, which maintains a
-sliding window of length `maxBurst / rate` seconds, and allows at most `maxBurst` logs in this window. For most practical 
+sliding window of length `maxBurst / rate` seconds, and allows at most `maxBurst` logs in this window. For most practical
 purposes, this difference should be negligible.
 
-### Performance Comparison to BurstFilter
+#### Performance Comparison to BurstFilter
 
 The most important performance related difference between `BurstFilter` and `ThrottlingFilter`, is that the latter is garbage free
 during steady state logging (see [here](https://logging.apache.org/log4j/2.x/manual/garbagefree.html#Filters) for mainline log4j2
@@ -188,6 +209,36 @@ repository.
 
 Finally, it's important to keep things in perspective: None of this matters, unless millions of logs are filtered out per second,
 or you are extremely sensitive about allocations.
+
+### Async HttpAppender
+
+#### AsyncHttpAppenderConfiguration
+
+| Parameter                       | Type                            | Default Value     | Required | Description                                      | Expert Only |
+|---------------------------------|---------------------------------|-------------------|----------|--------------------------------------------------|-------------|
+| name                            | String                          | -                 | Yes      | Appender name                                    | No          |
+| url                             | URI                             | -                 | Yes      | Target HTTP endpoint                             | No          |
+| lingerMs                        | int                             | 5000              | No       | Max time to wait before sending a batch          | No          |
+| maxBatchBytes                   | int                             | 250_000           | No       | Max size of a batch                              | No          |
+| maxBatchLogEvents               | int                             | 1000              | No       | Max number of log events per batch               | No          |
+| connectTimeoutMillis            | int                             | 10_000            | No       | HTTP connection timeout                          | No          |
+| readTimeoutMillis               | int                             | 10_000            | No       | HTTP read timeout                                | No          |
+| maxInFlight                     | int                             | 5                 | No       | Max concurrent HTTP requests                     | No          |
+| method                          | RequestMethod                   | POST              | No       | HTTP method (POST/PUT)                           | No          |
+| batchPrefix                     | String                          | ""                | No       | Prefix for each batch                            | No          |
+| batchSeparator                  | String                          | "\n"              | No       | Separator between log events in a batch          | No          |
+| batchSuffix                     | String                          | ""                | No       | Suffix for each batch                            | No          |
+| httpSuccessCodes                | String                          | "200,202,204"     | No       | HTTP status codes considered successful          | No          |
+| httpRetryCodes                  | String                          | "500,502,503,504" | No       | HTTP status codes that trigger a retry           | No          |
+| retryOnIoError                  | boolean                         | true              | No       | Retry on I/O errors                              | No          |
+| retries                         | int                             | 5                 | No       | Number of HTTP retry attempts                    | No          |
+| contentEncoding                 | ContentEncoding                 | identity          | No       | Batch content encoding (identity/gzip)           | No          |
+| properties                      | Property[]                      | -                 | No       | Additional HTTP headers                          | No          |
+| ignoreExceptions                | boolean                         | true              | No       | Ignore exceptions during logging                 | Yes         |
+| maxBatchBufferBytes             | int                             | TODO              | No       | Max total buffer size for batches                | Yes         |
+| batchSeparatorInsertionStrategy | BatchSeparatorInsertionStrategy | if_missing        | No       | Strategy for inserting separators between events | Yes         |
+| httpClientSslConfigSupplier     | String                          | null              | No       | Class name for custom SSL config supplier        | Yes         |
+| batchCompletionListener         | String                          | null              | No       | Class name for custom batch completion listener  | Yes         |
 
 ## Additional Notes
 
