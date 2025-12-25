@@ -26,7 +26,7 @@
     <Appenders>
         <AsyncHttp name="AsyncHttp" url="http://y.xz" maxBatchBytes="1234" lingerMs="567" maxBatchLogEvents="78"
                    batchPrefix="start" batchSeparator="sep" batchSuffix="end"
-                   ignoreExceptions="false" connectTimeoutMillis="888"
+                   ignoreExceptions="false" connectTimeoutMs="888"
                    readTimeoutMillis="999" maxConcurrentRequests="17" method="PUT" batchSeparatorInsertionStrategy="always" retries="11"
                    httpSuccessCodes="200,201,202,203" httpRetryCodes="500,502" retryOnIoError="false" contentEncoding="gzip"
                    httpClientSslConfigSupplier="com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$SslConfigSupplier">

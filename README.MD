@@ -222,7 +222,7 @@ or you are extremely sensitive about allocations.
 | lingerMs                        | int                                                 | 5000               | No       | Max time to wait before sending a batch          | No          |
 | maxBatchBytes                   | int                                                 | 250_000            | No       | Max size of a batch                              | No          |
 | maxBatchLogEvents               | int                                                 | 1000               | No       | Max number of log events per batch               | No          |
-| connectTimeoutMillis            | int                                                 | 10_000             | No       | HTTP connection timeout                          | No          |
+| connectTimeoutMs                | int                                                 | 10_000             | No       | HTTP connection timeout                          | No          |
 | readTimeoutMillis               | int                                                 | 10_000             | No       | HTTP read timeout                                | No          |
 | maxConcurrentRequests           | int                                                 | 5                  | No       | Max concurrent HTTP requests                     | No          |
 | method                          | HTTP method                                         | POST               | No       | HTTP method (POST/PUT)                           | No          |
