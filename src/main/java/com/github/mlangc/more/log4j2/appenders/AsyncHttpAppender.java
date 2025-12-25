@@ -328,13 +328,27 @@ public class AsyncHttpAppender extends AbstractAppender {
                 scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerMs, TimeUnit.MILLISECONDS);
             }
 
-            if (currentBatchBytes + eventBytes.length > maxBatchBytes || currentBatch.size() >= maxBatchLogEvents) {
+            if (needsFlushAssumeLocked(eventBytes)) {
                 flushAssumingLocked();
+            }
+
+            if (currentBatchBytes == 0) {
+                currentBatchBytes += batchPrefix.length;
             }
 
             currentBatch.add(eventBytes);
             currentBatchBytes += eventBytes.length;
         });
+    }
+
+    private boolean needsFlushAssumeLocked(byte[] eventBytes) {
+        if (currentBatch.isEmpty()) {
+            return false;
+        } else if (currentBatch.size() >= maxBatchLogEvents) {
+            return true;
+        } else {
+            return currentBatchBytes + batchSeparator.length + batchSuffix.length + eventBytes.length > maxBatchBytes;
+        }
     }
 
     private void doWithLock(Runnable op) {

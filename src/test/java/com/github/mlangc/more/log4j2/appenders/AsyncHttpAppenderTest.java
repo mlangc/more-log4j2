@@ -55,6 +55,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.*;
 import java.io.BufferedReader;
@@ -90,6 +91,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AsyncHttpAppenderTest {
     private static final StatusLogger STATUS_LOGGER = StatusLogger.getLogger();
+    private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(AsyncHttpAppenderTest.class);
 
     static class SslConfigSupplier implements HttpClientSslConfigSupplier {
         @Override
@@ -1225,11 +1227,81 @@ class AsyncHttpAppenderTest {
         }
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {300, 400, 500})
-    void shouldRespectMaxBatchBytes() {
-        // TODO
+    @Test
+    void shouldRespectMaxBatchBytesInSimpleScenario() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 
+        final var maxBatchBytes = 300;
+        ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchPrefix", "(((")
+                        .addAttribute("batchSuffix", ")))")
+                        .addAttribute("batchSeparator", "#!#")
+                        .addAttribute("maxBatchBytes", maxBatchBytes)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        assertThat(configBuilder.isValid()).as(configBuilder::toXmlConfiguration).isTrue();
+        var config = configBuilder.build(false);
+
+        var longLogLine = "x".repeat(100);
+        try (var context = TestHelpers.loggerContextFromConfig(config)) {
+            var log = context.getLogger(getClass());
+            log.info(longLogLine);
+            log.info(longLogLine);
+            log.info(longLogLine);
+        }
+
+        wireMockExt.verify(2, postRequestedFor(urlEqualTo(wireMockPath)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {200, 500, 1000, 2000})
+    void shouldRespectMaxBatchBytes(int maxBatchBytes) {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        final var separator = "#!#";
+        final var prefix = "begin{";
+        final var suffix = "}end";
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchPrefix", prefix)
+                        .addAttribute("batchSuffix", suffix)
+                        .addAttribute("batchSeparator", separator)
+                        .addAttribute("maxBatchBytes", maxBatchBytes)
+                        .addAttribute("maxBatchEvents", Integer.MAX_VALUE)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        assertThat(configBuilder.isValid()).as(configBuilder::toXmlConfiguration).isTrue();
+        var config = configBuilder.build(false);
+
+        var logEvents = 200;
+        var logLen = 100;
+        var longLogLine = "x".repeat(logLen);
+        try (var context = TestHelpers.loggerContextFromConfig(config)) {
+            var log = context.getLogger(getClass());
+
+            for (int i = 0; i < logEvents; i++) {
+                log.info(longLogLine);
+            }
+        }
+
+        var requests = wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
+
+        assertThat(requests)
+                .isNotEmpty()
+                .allSatisfy(r -> assertThat(r.getBody().length).isLessThanOrEqualTo(maxBatchBytes));
+
+        var numSmallerThanNeeded = requests.stream()
+                .filter(r -> r.getBody().length + logLen + separator.length() + suffix.length() <= maxBatchBytes)
+                .count();
+
+        assertThat(numSmallerThanNeeded).isLessThanOrEqualTo(1);
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {
