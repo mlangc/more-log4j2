@@ -223,7 +223,7 @@ unreachable or unresponsive.
 
 #### Publishing Logs to Grafana
 
-#### AsyncHttpAppenderConfiguration
+#### Configuration
 
 | Parameter                       | Type                                                | Default Value      | Required | Description                                         | Expert Only |
 |---------------------------------|-----------------------------------------------------|--------------------|----------|-----------------------------------------------------|-------------|
