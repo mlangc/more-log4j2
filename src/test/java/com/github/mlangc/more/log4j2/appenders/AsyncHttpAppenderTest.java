@@ -287,7 +287,7 @@ class AsyncHttpAppenderTest {
             assertThat(appender.maxBatchBytes()).isEqualTo(250_000);
 
             assertThat(appender.connectTimeoutMs()).isEqualTo(10_000);
-            assertThat(appender.readTimeoutMillis()).isEqualTo(10_000);
+            assertThat(appender.readTimeoutMs()).isEqualTo(10_000);
             assertThat(appender.maxConcurrentRequests()).isEqualTo(5);
             assertThat(appender.contentEncoding()).isEqualTo(ContentEncoding.IDENTITY);
             assertThat(appender.batchSeparatorInsertionStrategy()).isEqualTo(BatchSeparatorInsertionStrategy.IF_MISSING);
@@ -323,7 +323,7 @@ class AsyncHttpAppenderTest {
             assertThat(appender.batchSuffix()).isEqualTo("end");
             assertThat(appender.ignoreExceptions()).isFalse();
             assertThat(appender.connectTimeoutMs()).isEqualTo(888);
-            assertThat(appender.readTimeoutMillis()).isEqualTo(999);
+            assertThat(appender.readTimeoutMs()).isEqualTo(999);
             assertThat(appender.maxConcurrentRequests()).isEqualTo(17);
             assertThat(appender.method()).isEqualTo(RequestMethod.PUT);
             assertThat(appender.batchSeparatorInsertionStrategy()).isEqualTo(BatchSeparatorInsertionStrategy.ALWAYS);

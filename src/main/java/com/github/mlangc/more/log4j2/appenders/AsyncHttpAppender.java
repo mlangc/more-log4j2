@@ -246,7 +246,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "maxBatchLogEvents", defaultInt = 1000) int maxBatchLogEvents,
             @PluginAttribute(value = "ignoreExceptions", defaultBoolean = true) boolean ignoreExceptions,
             @PluginAttribute(value = "connectTimeoutMs", defaultInt = 10_000) int connectTimeoutMs,
-            @PluginAttribute(value = "readTimeoutMillis", defaultInt = 10_000) int readTimeoutMillis,
+            @PluginAttribute(value = "readTimeoutMs", defaultInt = 10_000) int readTimeoutMs,
             @PluginAttribute(value = "maxConcurrentRequests", defaultInt = 5) int maxConcurrentRequests,
             @PluginAttribute(value = "method", defaultString = "POST") RequestMethod method,
             @PluginAttribute(value = "batchPrefix") String batchPrefix,
@@ -264,7 +264,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginElement("Layout") Layout<? extends Serializable> layout,
             @PluginElement("Properties") Property[] properties,
             @PluginConfiguration Configuration configuration) {
-        var managerData = new HttpClientManagerData(Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(readTimeoutMillis), httpClientSslConfigSupplier);
+        var managerData = new HttpClientManagerData(Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(readTimeoutMs), httpClientSslConfigSupplier);
 
         if (batchSeparator == null) {
             batchSeparator = "\n";
@@ -569,7 +569,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return Math.toIntExact(httpClientManager.httpClient.connectTimeout().orElseThrow().toMillis());
     }
 
-    int readTimeoutMillis() {
+    int readTimeoutMs() {
         return Math.toIntExact(httpClientManager.readTimeout.toMillis());
     }
 
