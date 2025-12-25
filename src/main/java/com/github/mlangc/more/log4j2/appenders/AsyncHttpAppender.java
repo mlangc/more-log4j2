@@ -64,7 +64,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final int maxBatchBytes;
     private final int lingerMs;
     private final long lingerNs;
-    private final int maxInFlight;
+    private final int maxConcurrentRequests;
     private final int maxBatchLogEvents;
     private final int maxBatchBufferBytes;
     private final HttpClientManager httpClientManager;
@@ -147,7 +147,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     AsyncHttpAppender(
             String name, URI url, Filter filter, Layout<? extends Serializable> layout, boolean ignoreExceptions, Property[] properties,
-            int maxBatchBytes, int lingerMs, int maxInFlight,
+            int maxBatchBytes, int lingerMs, int maxConcurrentRequests,
             int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, RequestMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
             boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener) {
@@ -169,8 +169,8 @@ public class AsyncHttpAppender extends AbstractAppender {
             throw new IllegalArgumentException("lingerMs must not be smaller than 1, but got " + lingerMs);
         }
 
-        if (maxInFlight < 1) {
-            throw new IllegalArgumentException("maxInFlight must not be smaller than 1, but got " + maxInFlight);
+        if (maxConcurrentRequests < 1) {
+            throw new IllegalArgumentException("maxConcurrentRequests must not be smaller than 1, but got " + maxConcurrentRequests);
         }
 
         if (intersects(httpSuccessCodes, httpRetryCodes)) {
@@ -183,8 +183,8 @@ public class AsyncHttpAppender extends AbstractAppender {
         this.maxBatchBufferBytes = maxBatchBufferBytes;
         this.lingerMs = lingerMs;
         this.lingerNs = TimeUnit.MILLISECONDS.toNanos(lingerMs);
-        this.maxInFlight = maxInFlight;
-        this.allowedInFlight = new Semaphore(maxInFlight);
+        this.maxConcurrentRequests = maxConcurrentRequests;
+        this.allowedInFlight = new Semaphore(maxConcurrentRequests);
         this.maxBatchLogEvents = maxBatchLogEvents;
         this.httpClientManager = requireNonNull(httpClientManager);
         this.ticker = requireNonNull(ticker);
@@ -247,7 +247,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "ignoreExceptions", defaultBoolean = true) boolean ignoreExceptions,
             @PluginAttribute(value = "connectTimeoutMillis", defaultInt = 10_000) int connectTimeoutMillis,
             @PluginAttribute(value = "readTimeoutMillis", defaultInt = 10_000) int readTimeoutMillis,
-            @PluginAttribute(value = "maxInFlight", defaultInt = 5) int maxInFlight,
+            @PluginAttribute(value = "maxConcurrentRequests", defaultInt = 5) int maxConcurrentRequests,
             @PluginAttribute(value = "method", defaultString = "POST") RequestMethod method,
             @PluginAttribute(value = "batchPrefix") String batchPrefix,
             @PluginAttribute(value = "batchSeparator") String batchSeparator,
@@ -271,7 +271,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
 
         return new AsyncHttpAppender(name, url, filter, layout, ignoreExceptions, properties,
-                maxBatchBytes, lingerMs, maxInFlight, maxBatchLogEvents,
+                maxBatchBytes, lingerMs, maxConcurrentRequests, maxBatchLogEvents,
                 HttpClientManager.get(managerData), System::nanoTime, configuration, method,
                 batchPrefix == null ? EMPTY_BYTE_ARRAY : batchPrefix.getBytes(StandardCharsets.UTF_8),
                 batchSeparator.getBytes(StandardCharsets.UTF_8),
@@ -573,8 +573,8 @@ public class AsyncHttpAppender extends AbstractAppender {
         return Math.toIntExact(httpClientManager.readTimeout.toMillis());
     }
 
-    int maxInFlight() {
-        return maxInFlight;
+    int maxConcurrentRequests() {
+        return maxConcurrentRequests;
     }
 
     int maxBatchLogEvents() {

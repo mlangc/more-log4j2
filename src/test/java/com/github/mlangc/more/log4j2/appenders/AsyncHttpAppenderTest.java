@@ -288,7 +288,7 @@ class AsyncHttpAppenderTest {
 
             assertThat(appender.connectTimeoutMillis()).isEqualTo(10_000);
             assertThat(appender.readTimeoutMillis()).isEqualTo(10_000);
-            assertThat(appender.maxInFlight()).isEqualTo(5);
+            assertThat(appender.maxConcurrentRequests()).isEqualTo(5);
             assertThat(appender.contentEncoding()).isEqualTo(ContentEncoding.IDENTITY);
             assertThat(appender.batchSeparatorInsertionStrategy()).isEqualTo(BatchSeparatorInsertionStrategy.IF_MISSING);
             assertThat(appender.retryOnIoError()).isTrue();
@@ -324,7 +324,7 @@ class AsyncHttpAppenderTest {
             assertThat(appender.ignoreExceptions()).isFalse();
             assertThat(appender.connectTimeoutMillis()).isEqualTo(888);
             assertThat(appender.readTimeoutMillis()).isEqualTo(999);
-            assertThat(appender.maxInFlight()).isEqualTo(17);
+            assertThat(appender.maxConcurrentRequests()).isEqualTo(17);
             assertThat(appender.method()).isEqualTo(RequestMethod.PUT);
             assertThat(appender.batchSeparatorInsertionStrategy()).isEqualTo(BatchSeparatorInsertionStrategy.ALWAYS);
             assertThat(appender.contentEncoding()).isEqualTo(ContentEncoding.GZIP);
@@ -639,7 +639,7 @@ class AsyncHttpAppenderTest {
         configBuilder = configBuilder.setConfigurationName(configName)
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("url", wireMockHttpUrl)
-                        .addAttribute("maxInFlight", 2)
+                        .addAttribute("maxConcurrentRequests", 2)
                         .addAttribute("maxBatchLogEvents", 1)
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
@@ -1058,12 +1058,12 @@ class AsyncHttpAppenderTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -1})
-    void shouldNotAllowMaxInFlightSmaller1(int maxInFlight) {
+    void shouldNotAllowMaxInFlightSmaller1(int maxConcurrentRequests) {
         ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         configBuilder = configBuilder
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("url", "http://was.ich.seh.com")
-                        .addAttribute("maxInFlight", maxInFlight)
+                        .addAttribute("maxConcurrentRequests", maxConcurrentRequests)
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
@@ -1304,6 +1304,19 @@ class AsyncHttpAppenderTest {
 
         assertThat(numSmallerThanNeeded).isLessThanOrEqualTo(1);
     }
+
+    @Disabled
+    @Test
+    void shouldEventuallyConnectEvenIfBackendIsNotReachableOnStartup() {
+        // TODO
+    }
+
+    @Disabled
+    @Test
+    void shouldSelfHealIfBackendIsTmpUnavailable() {
+        // TODO
+    }
+
 
     private void shouldRespectAppenderFilters(LoggerContext context) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
