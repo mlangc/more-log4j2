@@ -91,7 +91,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AsyncHttpAppenderTest {
     private static final StatusLogger STATUS_LOGGER = StatusLogger.getLogger();
-    private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(AsyncHttpAppenderTest.class);
+
+    static { LoggerFactory.getLogger(AsyncHttpAppenderTest.class); }
 
     static class SslConfigSupplier implements HttpClientSslConfigSupplier {
         @Override

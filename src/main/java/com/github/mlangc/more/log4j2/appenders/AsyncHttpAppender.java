@@ -19,7 +19,6 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
@@ -34,8 +33,6 @@ import org.apache.logging.log4j.core.config.plugins.*;
 import org.apache.logging.log4j.core.config.plugins.validation.constraints.Required;
 import org.apache.logging.log4j.core.util.Log4jThreadFactory;
 import org.apache.logging.log4j.core.util.NanoClock;
-import org.apache.logging.log4j.status.StatusData;
-import org.apache.logging.log4j.status.StatusListener;
 import org.apache.logging.log4j.status.StatusLogger;
 
 import java.io.ByteArrayOutputStream;
@@ -60,7 +57,6 @@ import static java.util.Objects.requireNonNull;
 
 @Plugin(name = "AsyncHttp", category = Node.CATEGORY, elementType = Appender.ELEMENT_TYPE, printObject = true)
 public class AsyncHttpAppender extends AbstractAppender {
-    private static final String DROPPING_BATCH_STATUS_LOG_MARKER_PREFIX = "[DROPPING_BATCH_MARKER]";
     private static final long DEFAULT_TIMEOUT_SECS = 15;
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
@@ -109,27 +105,6 @@ public class AsyncHttpAppender extends AbstractAppender {
         FutureHolder(String jobName) {
             this.jobName = jobName;
         }
-    }
-
-    public static StatusListener newDroppedBatchListener(Runnable onBatchDropped) {
-        return new StatusListener() {
-            @Override
-            public void log(StatusData data) {
-                if (data.getMessage().getFormattedMessage().startsWith(DROPPING_BATCH_STATUS_LOG_MARKER_PREFIX)) {
-                    onBatchDropped.run();
-                }
-            }
-
-            @Override
-            public Level getStatusLevel() {
-                return Level.WARN;
-            }
-
-            @Override
-            public void close() {
-
-            }
-        };
     }
 
     public sealed interface BatchCompletionType { }
