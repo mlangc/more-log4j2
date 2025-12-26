@@ -221,13 +221,80 @@ unreachable or unresponsive.
 
 The implementation makes some tradeoffs, that I clearly want to spell out here. The basic assumption is that logging is an
 important, but *secondary* concern of your application. Therefore, the appender tries it's best to keep a low profile, and
-performs most of its work in a separate, single threaded thread pool. If an HTTP backend is not keeping up, or temporarily
-unavailabe, unsent log batches will first accumulate in an internal buffer (see `maxBatchBufferBytes`). If this buffer runs full,
-batches will be dropped. By default, this will result in a warning being logged to the
+performs most of its work in a separate, single threaded thread pool asynchronously. If an HTTP backend is not keeping up, or
+temporarily unavailabe, unsent log batches will accumulate in an internal buffer (see `maxBatchBufferBytes`). If this buffer runs
+full, batches will be dropped. By default, this will result in a warning being logged to the
 [StatusLogger](https://logging.apache.org/log4j/2.x/manual/status-logger.html), but you can override this behavior by providing a
 `batchCompletionListener`.
 
+Another tradeoff concerns the way that individual log events are combined into batches. While more advanced schemes can be
+imagined, I decided to stick with the simple approach of combining byte arrays of rendered log events into a batches by using a
+prefix, a separator and a suffix. While this constrains the usage somewhat, it's still relatively flexible, and allows for a very
+efficient and predicatable implementation.
+
 #### Publishing Logs to Dynatrace
+
+To publish logs to the 
+[Dynatrace Log Monitoring API v2](https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs)
+you can use the following recipe: 
+ 
+* At first make sure to add a dependency to the 
+[JSON template layout](https://logging.apache.org/log4j/2.x/manual/json-template-layout.html)
+that is part of mainline log4j2, but is shipped in a separate JAR.
+* Then create a layout file to format your log messages that looks like
+  ```json
+  {
+    "timestamp": {
+      "$resolver": "timestamp",
+      "epoch": {
+        "unit": "millis",
+        "rounded": true
+      }
+    },
+    "level": {
+      "$resolver": "level",
+      "field": "name"
+    }
+  }
+  ```
+  and place it on your classpath.
+* Now you can use the following configuration
+  ```xml
+  <Configuration status="WARN">
+      <Properties>
+          <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
+      </Properties>
+      <Appenders>
+          <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" maxBatchBytes="10000000" maxBatchLogEvents="50000" httpSuccessCodes="200,204"
+                     httpRetryCodes="429,503" contentEncoding="gzip" >
+              <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
+              <Property name="Content-Type" value="application/jsonl"/>
+              <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
+                  <EventTemplateAdditionalField
+                          key="message"
+                          format="JSON"
+                          value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                  <!-- Some random attributes to demonstrate how easy it is to add additional fields -->
+                  <EventTemplateAdditionalField key="dt.os.type" value="${java:os}"/>
+                  <EventTemplateAdditionalField key="java.runtime" value="${java:runtime}"/>
+              </JsonTemplateLayout>
+          </AsyncHttp>
+
+          <Console name="Console">
+              <PatternLayout pattern="${pattern}"/>
+          </Console>
+      </Appenders>
+      <Loggers>
+          <Root level="info">
+              <AppenderRef ref="Console"/>
+              <AppenderRef ref="Dynatrace"/>
+          </Root>
+      </Loggers>
+  </Configuration>
+```
+
+
 
 #### Publishing Logs to Datadog
 
