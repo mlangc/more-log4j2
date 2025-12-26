@@ -217,20 +217,29 @@ log monitoring solutions, like Dynatrace, Datadog and Grafana and is able to del
 overhead. The implementation has been optimized for resiliency, and will never block application threads because a backend is
 unreachable or unresponsive.
 
-##### Tradeoffs
+#### Attention
 
-The implementation makes some tradeoffs, that I clearly want to spell out here. The basic assumption is that logging is an
-important, but *secondary* concern of your application. Therefore, the appender tries it's best to keep a low profile, and
+Depending on your setup you might want to set
+[log4j2.shutdownHookEnabled](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled)
+to true, to avoid loosing logs on regular shutdowns. `log4j2.shutdownHookEnabled` defaults to false if a `Servlet` class is found
+on your classpath (see
+[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). 
+
+#### Tradeoffs
+
+The implementation makes some tradeoffs, that I clearly want to spell out here. 
+
+The basic assumption is that logging is an important, but *secondary* concern of your application. If this wasn't the case, you
+would probably not use an asynchronous appender. Therefore, the implementation tries it's best to keep a low profile, and 
 performs most of its work in a separate, single threaded thread pool asynchronously. If an HTTP backend is not keeping up, or
 temporarily unavailabe, unsent log batches will accumulate in an internal buffer (see `maxBatchBufferBytes`). If this buffer runs
 full, batches will be dropped. By default, this will result in a warning being logged to the
 [StatusLogger](https://logging.apache.org/log4j/2.x/manual/status-logger.html), but you can override this behavior by providing a
 `batchCompletionListener`.
 
-Another tradeoff concerns the way that individual log events are combined into batches. While more advanced schemes can be
-imagined, I decided to stick with the simple approach of combining byte arrays of rendered log events into a batches by using a
-prefix, a separator and a suffix. While this constrains the usage somewhat, it's still relatively flexible, and allows for a very
-efficient and predicatable implementation.
+Another tradeoff concerns the way that individual log events are combined into batches: I decided to stick with the simple
+approach of combining rendered log events into a batches by using a user supplied prefix, separator and suffix. Support for more 
+advanced schemes to combine log events into batches might be added at a latter point, if a clear use case arises.
 
 #### Publishing Logs to Dynatrace
 
@@ -258,16 +267,16 @@ that is part of mainline log4j2, but is shipped in a separate JAR.
   }
   ```
   and place it on your classpath.
-* Now you can adapt the following log4j2 configuration according to your needs:
+* Now you can copy and paste from the following log4j2 configuration according to your needs:
    ```xml
   <Configuration status="WARN">
-      <Properties>
-          <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
-      </Properties>
-      <Appenders>
+    <Properties>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
+    </Properties>
+    <Appenders>
 
         <!--
-            It is assumed that the environment variable DYNATRACE_API_V2_LOGS_INGEST points to ingest V2 API as outlined
+            DYNATRACE_API_V2_LOGS_INGEST should point to ingest the ingest V2 API as outlined
             in https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs.
 
             DYNATRACE_API_TOKEN needs to point to a valid API token.
