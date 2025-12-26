@@ -247,10 +247,10 @@ To publish logs to the
 [Dynatrace Log Monitoring API v2](https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs)
 you can use the following recipe: 
  
-* At first make sure to add a dependency to the 
+* Add a dependency to the 
 [JSON template layout](https://logging.apache.org/log4j/2.x/manual/json-template-layout.html)
 that is part of mainline log4j2, but is shipped in a separate JAR.
-* Then create a layout file to format your log messages that looks like
+* Create a layout file to format your log messages that looks like
   ```json
   {
     "timestamp": {
@@ -312,7 +312,7 @@ that is part of mainline log4j2, but is shipped in a separate JAR.
     </Appenders>
     <Loggers>
         <Root level="info">
-            <!-- This will push logs to Dynatrace, and log them to the console at the same time -->
+            <!-- This will push logs to Dynatrace and to the console -->
             <AppenderRef ref="Console"/>
             <AppenderRef ref="Dynatrace"/>
         </Root>
@@ -320,9 +320,72 @@ that is part of mainline log4j2, but is shipped in a separate JAR.
   </Configuration>
   ```
 
-
-
 #### Publishing Logs to Datadog
+
+To publish logs to the
+[Datadog V2 Log Ingest API](https://docs.datadoghq.com/api/latest/logs/)
+you can use the following recipe:
+
+* Add a dependency to the
+  [JSON template layout](https://logging.apache.org/log4j/2.x/manual/json-template-layout.html)
+  that is part of mainline log4j2, but is shipped in a separate JAR.
+* Create a layout file to format your log messages that looks like
+  ```json
+  {
+    "status": {
+      "$resolver": "level",
+      "field": "name"
+    }
+  }
+  ```
+  and place it on your classpath.
+* Now you can copy and paste from the following log4j2 configuration according to your needs:
+  ```xml
+  <Configuration status="WARN">
+    <Properties>
+      <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
+    </Properties>
+    <Appenders>
+
+      <!--
+          The url needs to be adapted according to your region.
+          See https://docs.datadoghq.com/api/latest/logs/
+
+          DATADOG_API_KEY should point to a valid Datadog API key.
+          See https://docs.datadoghq.com/account_management/api-app-keys/
+      -->
+      <AsyncHttp name="Datadog" url="https://http-intake.logs.datadoghq.eu/api/v2/logs"
+                 batchPrefix="[" batchSeparator="," batchSuffix="]"
+                 maxBatchBytes="4500000" maxBatchLogEvents="1000"
+                 httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
+        <Property name="DD-API-KEY" value="${env:DATADOG_API_KEY}"/>
+        <Property name="Content-Type" value="application/json"/>
+        <JsonTemplateLayout eventTemplateUri="classpath:DatadogLogMessageJsonLayout.json">
+          <EventTemplateAdditionalField
+                  key="message"
+                  format="JSON"
+                  value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+          <EventTemplateAdditionalField key="ddtags" value="env:demo"/>
+          <EventTemplateAdditionalField key="ddsource" value="demo"/>
+          <EventTemplateAdditionalField key="hostname" value="demo"/>
+          <EventTemplateAdditionalField key="service" value="demo"/>
+        </JsonTemplateLayout>
+      </AsyncHttp>
+
+      <Console name="Console">
+        <PatternLayout pattern="${pattern}"/>
+      </Console>
+    </Appenders>
+    <Loggers>
+      <Root level="info">
+        <!-- This will push logs to Datadog and to the console -->
+        <AppenderRef ref="Datadog"/>
+        <AppenderRef ref="Console"/>
+      </Root>
+    </Loggers>
+  </Configuration>
+  ```
 
 #### Publishing Logs to Grafana
 

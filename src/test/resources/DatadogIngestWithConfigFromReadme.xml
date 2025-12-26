@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  #%L
+  more-log4j2
+  %%
+  Copyright (C) 2025 Matthias Langer
+  %%
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+  
+       http://www.apache.org/licenses/LICENSE-2.0
+  
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+  #L%
+  -->
+
+<Configuration status="WARN">
+    <Properties>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
+    </Properties>
+    <Appenders>
+
+        <!--
+            The url needs to be adapted according to your region.
+            See https://docs.datadoghq.com/api/latest/logs/
+
+            DATADOG_API_KEY should point to a valid Datadog API key.
+            See https://docs.datadoghq.com/account_management/api-app-keys/
+        -->
+        <AsyncHttp name="Datadog" url="https://http-intake.logs.datadoghq.eu/api/v2/logs"
+                   batchPrefix="[" batchSeparator="," batchSuffix="]"
+                   maxBatchBytes="4500000" maxBatchLogEvents="1000"
+                   httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
+            <Property name="DD-API-KEY" value="${env:DATADOG_API_KEY}"/>
+            <Property name="Content-Type" value="application/json"/>
+            <JsonTemplateLayout eventTemplateUri="classpath:DatadogLogMessageJsonLayout.json">
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <EventTemplateAdditionalField key="ddtags" value="env:demo"/>
+                <EventTemplateAdditionalField key="ddsource" value="demo"/>
+                <EventTemplateAdditionalField key="hostname" value="demo"/>
+                <EventTemplateAdditionalField key="service" value="demo"/>
+            </JsonTemplateLayout>
+        </AsyncHttp>
+
+        <Console name="Console">
+            <PatternLayout pattern="${pattern}"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <!-- This will push logs to Datadog, and to the console -->
+            <AppenderRef ref="Datadog"/>
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>
+

@@ -21,7 +21,7 @@
 
 <Configuration status="WARN">
     <Properties>
-        <Property key="pattern" value="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
     </Properties>
 
     <RoutingFilter>

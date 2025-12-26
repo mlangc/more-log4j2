@@ -1,6 +1,24 @@
+/*-
+ * #%L
+ * more-log4j2
+ * %%
+ * Copyright (C) 2025 Matthias Langer
+ * %%
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * #L%
+ */
 package com.github.mlangc.more.log4j2.demos;
 
-import com.github.mlangc.more.log4j2.experiments.DynatraceHttpWithAsyncAppender;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -9,9 +27,9 @@ public class DynatraceIngestWithConfigFromReadmeDemo {
 
     static {
         System.setProperty("log4j2.shutdownHookEnabled", "true");
-        System.setProperty("log4j2.configurationFile", "DynatraceIngestReadmeConfig.xml");
+        System.setProperty("log4j2.configurationFile", "DynatraceIngestWithConfigFromReadme.xml");
 
-        LOG = LogManager.getLogger(DynatraceHttpWithAsyncAppender.class);
+        LOG = LogManager.getLogger(DynatraceIngestWithConfigFromReadmeDemo.class);
     }
 
 

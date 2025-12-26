@@ -25,7 +25,12 @@ import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 
 class MarkerBasedLogThrottlingDemo {
-    private static final Logger LOG = LoggerFactory.getLogger(MarkerBasedLogThrottlingDemo.class);
+    private static final Logger LOG;
+
+    static {
+        System.setProperty("log4j2.configurationFile", "MarkerBasedThrottlingDemoConfig.xml");
+        LOG = LoggerFactory.getLogger(MarkerBasedLogThrottlingDemo.class);
+    }
 
     public static final Marker THROTTLED_1 = MarkerFactory.getMarker("throttled1");
     public static final Marker THROTTLED_10 = MarkerFactory.getMarker("throttled10");

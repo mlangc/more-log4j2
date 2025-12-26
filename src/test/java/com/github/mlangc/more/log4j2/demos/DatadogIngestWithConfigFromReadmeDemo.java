@@ -17,24 +17,23 @@
  * limitations under the License.
  * #L%
  */
-package com.github.mlangc.more.log4j2.experiments;
+package com.github.mlangc.more.log4j2.demos;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class DynatraceHttpWithAsyncAppender {
+public class DatadogIngestWithConfigFromReadmeDemo {
     private static final Logger LOG;
 
     static {
-        System.setProperty("log4j2.is.webapp", "false");
-        System.setProperty("log4j2.configurationFile", "DynatraceHttpAsyncAppenderConfig.xml");
+        System.setProperty("log4j2.shutdownHookEnabled", "true");
+        System.setProperty("log4j2.configurationFile", "DatadogIngestWithConfigFromReadme.xml");
 
-        LOG = LogManager.getLogger(DynatraceHttpWithAsyncAppender.class);
+        LOG = LogManager.getLogger(DatadogIngestWithConfigFromReadmeDemo.class);
     }
 
     public static void main(String[] args) {
-        for (int i = 0; i < 25; i++) {
-            LOG.info("lauser: {}", i);
-        }
+        LOG.info("hello");
+        LOG.info("world");
     }
 }
