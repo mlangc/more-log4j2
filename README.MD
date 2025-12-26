@@ -217,6 +217,16 @@ log monitoring solutions, like Dynatrace, Datadog and Grafana and is able to del
 overhead. The implementation has been optimized for resiliency, and will never block application threads because a backend is
 unreachable or unresponsive.
 
+##### Tradeoffs
+
+The implementation makes some tradeoffs, that I clearly want to spell out here. The basic assumption is that logging is an
+important, but *secondary* concern of your application. Therefore, the appender tries it's best to keep a low profile, and
+performs most of its work in a separate, single threaded thread pool. If an HTTP backend is not keeping up, or temporarily
+unavailabe, unsent log batches will first accumulate in an internal buffer (see `maxBatchBufferBytes`). If this buffer runs full,
+batches will be dropped. By default, this will result in a warning being logged to the
+[StatusLogger](https://logging.apache.org/log4j/2.x/manual/status-logger.html), but you can override this behavior by providing a
+`batchCompletionListener`.
+
 #### Publishing Logs to Dynatrace
 
 #### Publishing Logs to Datadog
