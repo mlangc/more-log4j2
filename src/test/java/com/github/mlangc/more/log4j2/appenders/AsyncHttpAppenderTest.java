@@ -35,6 +35,7 @@ import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.MarkerManager;
 import org.apache.logging.log4j.core.Appender;
@@ -72,10 +73,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
@@ -237,19 +235,20 @@ class AsyncHttpAppenderTest {
     static ScheduledThreadPoolExecutor executor;
 
     static class TestBatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+        private static final Logger LOG = LogManager.getLogger(TestBatchCompletionListener.class);
         private static final ArrayDeque<AsyncHttpAppender.BatchCompletionEvent> lastBatchCompletionEvents = new ArrayDeque<>();
 
         @Override
-        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent completionEvent) {
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent event) {
             synchronized (TestBatchCompletionListener.class) {
-                lastBatchCompletionEvents.addLast(completionEvent);
+                lastBatchCompletionEvents.addLast(event);
 
                 if (lastBatchCompletionEvents.size() > 100) {
                     lastBatchCompletionEvents.removeFirst();
                 }
             }
 
-            STATUS_LOGGER.warn("completionEvent={}", completionEvent);
+            AsyncHttpAppender.logBatchCompletionEvent(LOG, ForkJoinPool.commonPool(), event);
         }
 
         static List<AsyncHttpAppender.BatchCompletionEvent> getLastBatchCompletionEvents() {

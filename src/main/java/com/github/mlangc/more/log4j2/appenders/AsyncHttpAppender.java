@@ -517,13 +517,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             return false;
         }
 
-        for (int i = 0; i < pattern.length; i++) {
-            if (data[data.length - pattern.length + i] != pattern[i]) {
-                return false;
-            }
-        }
-
-        return true;
+        return Arrays.equals(data, data.length - pattern.length, data.length, pattern, 0, pattern.length);
     }
 
     private static boolean startsWith(byte[] data, byte[] pattern) {
@@ -531,13 +525,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             return false;
         }
 
-        for (int i = 0; i < pattern.length; i++) {
-            if (data[i] != pattern[i]) {
-                return false;
-            }
-        }
-
-        return true;
+        return Arrays.equals(data, 0, pattern.length, pattern, 0, pattern.length);
     }
 
     private boolean hasUnpublishedLogData() {
@@ -701,7 +689,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
             stoppedCleanly = false;
         } finally {
-            // Without this, retries might be kept enabled in the case where we scheduled disableRetries above, but shoutdown the executor before the schedule runs below.
+            // Without this, retries might be kept enabled in the case where we scheduled disableRetries above, but shutdown the executor before the schedule runs below.
             retryManager.disableRetries();
         }
 
