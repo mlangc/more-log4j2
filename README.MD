@@ -389,6 +389,67 @@ you can use the following recipe:
 
 #### Publishing Logs to Grafana
 
+To publish logs to 
+[Grafana Loki](https://grafana.com/docs/loki/latest/reference/loki-http-api/#ingest-logs)
+you can use the following recipe:
+
+* Add a dependency to the
+  [JSON template layout](https://logging.apache.org/log4j/2.x/manual/json-template-layout.html)
+  that is part of mainline log4j2, but is shipped in a separate JAR.
+* Create a layout file to format your log messages that looks like
+  ```json
+  {
+    "stream": {
+      "service": "test-app"
+    },
+    "values": [
+      [
+        {
+          "$resolver": "pattern",
+          "pattern": "%d{UNIX_MILLIS}000000"
+        }, {
+        "$resolver": "pattern",
+        "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2} - %msg%n"
+      }
+      ]
+    ]
+  }
+  ```
+  and place it on your classpath.
+* Now you can copy and paste from the following log4j2 configuration according to your needs:
+  ```xml
+  <Configuration status="WARN">
+    <Appenders>
+      <!--
+          The url needs to be adapted according to your setup. See https://grafana.com/docs/loki/latest/reference/loki-http-api/#ingest-logs and
+          "Connections > Data sources" for details.
+
+          GRAFANA_LOKI_TOKEN needs to point to a Grafana Token suitable for log ingest in the format used by Basic HTTP Authentication:
+            "<userId>:<credentials>" converted to Base64. See https://en.wikipedia.org/wiki/Basic_access_authentication
+      -->
+      <AsyncHttp name="Grafana" url="https://logs-prod-012.grafana.net/loki/api/v1/push"
+                 batchPrefix='{"streams": [' batchSeparator="," batchSuffix="]}"
+                 maxBatchLogEvents="5000" maxBatchBytes="500000"
+                 contentEncoding="gzip">
+        <Property name="Content-Type" value="application/json"/>
+        <Property name="Authorization" value="Basic ${env:GRAFANA_LOKI_TOKEN}"/>
+        <JsonTemplateLayout eventTemplateUri="classpath:GrafanaLokiV1PushLogSingleMessageJsonLayout.json"/>
+      </AsyncHttp>
+
+      <Console name="Console">
+        <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
+      </Console>
+    </Appenders>
+    <Loggers>
+      <Root level="info">
+        <!-- Pushes logs to Grafana and to the console -->
+        <AppenderRef ref="Grafana"/>
+        <AppenderRef ref="Console"/>
+      </Root>
+    </Loggers>
+  </Configuration>
+  ```
+
 #### Configuration
 
 | Parameter                       | Type                                                | Default Value      | Required | Description                                         | Expert Only |
