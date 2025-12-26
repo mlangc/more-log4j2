@@ -115,23 +115,18 @@ themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (note that 
 `FilterRouteThen` is taken and all remaining `FilterRoute` elements, as well as the mandatory `DefaultFilterRoute`
 are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
 
-In Java, the behaviour of the filter can be summarized as follows:
-
+In Java, the behavior of the filter can be summarized as follows:
 ```java
-for(var route :routes){
-        if(route.
+void routingFilter() {
+  for(var route :routes) {
+    if(route.accepts(event)) {
+      route.apply(event);
+      return;
+    }
+  }
 
-accepts(event)){
-        route.
-
-apply(event);
-        return;
-                }
-                }
-
-                defaultRoute.
-
-apply(event);
+  defaultRoute.apply(event);
+}
 ```
 
 Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, I'd suggest to use the order
@@ -238,7 +233,7 @@ full, batches will be dropped. By default, this will result in a warning being l
 `batchCompletionListener`.
 
 Another tradeoff concerns the way that individual log events are combined into batches: I decided to stick with the simple
-approach of combining rendered log events into a batches by using a user supplied prefix, separator and suffix. Support for more 
+approach of combining rendered log events into batches by using a user supplied prefix, separator and suffix. Support for more 
 advanced schemes to combine log events into batches might be added at a latter point, if a clear use case arises.
 
 #### Publishing Logs to Dynatrace
