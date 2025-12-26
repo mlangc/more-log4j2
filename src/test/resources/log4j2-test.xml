@@ -20,6 +20,10 @@
   -->
 
 <Configuration status="WARN">
+    <Properties>
+        <Property key="pattern" value="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
+    </Properties>
+
     <RoutingFilter>
         <FilterRoute>
             <FilterRouteIf>
@@ -45,7 +49,7 @@
     </RoutingFilter>
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
+            <PatternLayout pattern="${pattern}"/>
         </Console>
     </Appenders>
     <Loggers>
