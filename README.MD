@@ -258,41 +258,58 @@ that is part of mainline log4j2, but is shipped in a separate JAR.
   }
   ```
   and place it on your classpath.
-* Now you can use the following configuration
-  ```xml
+* Now you can adapt the following log4j2 configuration according to your needs:
+   ```xml
   <Configuration status="WARN">
       <Properties>
           <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
       </Properties>
       <Appenders>
-          <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" maxBatchBytes="10000000" maxBatchLogEvents="50000" httpSuccessCodes="200,204"
-                     httpRetryCodes="429,503" contentEncoding="gzip" >
-              <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
-              <Property name="Content-Type" value="application/jsonl"/>
-              <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
-                  <EventTemplateAdditionalField
-                          key="message"
-                          format="JSON"
-                          value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
 
-                  <!-- Some random attributes to demonstrate how easy it is to add additional fields -->
-                  <EventTemplateAdditionalField key="dt.os.type" value="${java:os}"/>
-                  <EventTemplateAdditionalField key="java.runtime" value="${java:runtime}"/>
-              </JsonTemplateLayout>
-          </AsyncHttp>
+        <!--
+            It is assumed that the environment variable DYNATRACE_API_V2_LOGS_INGEST points to ingest V2 API as outlined
+            in https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs.
 
-          <Console name="Console">
-              <PatternLayout pattern="${pattern}"/>
-          </Console>
-      </Appenders>
-      <Loggers>
-          <Root level="info">
-              <AppenderRef ref="Console"/>
-              <AppenderRef ref="Dynatrace"/>
-          </Root>
-      </Loggers>
+            DYNATRACE_API_TOKEN needs to point to a valid API token.
+            See https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/basics/dynatrace-api-authentication.
+        -->
+        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
+                   maxBatchBytes="500000" maxBatchLogEvents="50000"
+                   httpSuccessCodes="200,204" httpRetryCodes="429,503"
+                   contentEncoding="gzip">
+            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
+            <Property name="Content-Type" value="application/jsonl"/>
+
+            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
+                <!--
+                    This can also be embedded in the layout directly, but doing it like this
+                    has the advantage that the pattern can be substituted.
+                    See https://logging.apache.org/log4j/2.x/manual/json-template-layout.html#property-substitution-in-config
+                -->
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <!-- Some random attributes to demonstrate how easy it is to add additional fields -->
+                <EventTemplateAdditionalField key="dt.os.type" value="${java:os}"/>
+                <EventTemplateAdditionalField key="java.runtime" value="${java:runtime}"/>
+            </JsonTemplateLayout>
+        </AsyncHttp>
+
+        <Console name="Console">
+            <PatternLayout pattern="${pattern}"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <!-- This will push logs to Dynatrace, and log them to the console at the same time -->
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Dynatrace"/>
+        </Root>
+    </Loggers>
   </Configuration>
-```
+  ```
 
 
 

@@ -62,6 +62,7 @@
     </Appenders>
     <Loggers>
         <Root level="info">
+            <!-- This will push logs to Dynatrace, and log them to the console at the same time -->
             <AppenderRef ref="Console"/>
             <AppenderRef ref="Dynatrace"/>
         </Root>
