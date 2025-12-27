@@ -21,7 +21,7 @@ package com.github.mlangc.more.log4j2.appenders;
 
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchSeparatorInsertionStrategy;
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.ContentEncoding;
-import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.RequestMethod;
+import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.HttpMethod;
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.http.Fault;
@@ -85,6 +85,7 @@ import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static java.io.File.separator;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AsyncHttpAppenderTest {
@@ -293,7 +294,7 @@ class AsyncHttpAppenderTest {
             assertThat(appender.retryOnIoError()).isTrue();
 
             assertThat(appender.httpSuccessCodes()).containsExactly(200, 202, 204);
-            assertThat(appender.httpRetryCodes()).containsExactly(500, 502, 503, 504);
+            assertThat(appender.httpRetryCodes()).containsExactly(429, 500, 502, 503, 504);
         }
     }
 
@@ -324,7 +325,7 @@ class AsyncHttpAppenderTest {
             assertThat(appender.connectTimeoutMs()).isEqualTo(888);
             assertThat(appender.readTimeoutMs()).isEqualTo(999);
             assertThat(appender.maxConcurrentRequests()).isEqualTo(17);
-            assertThat(appender.method()).isEqualTo(RequestMethod.PUT);
+            assertThat(appender.method()).isEqualTo(HttpMethod.PUT);
             assertThat(appender.batchSeparatorInsertionStrategy()).isEqualTo(BatchSeparatorInsertionStrategy.ALWAYS);
             assertThat(appender.contentEncoding()).isEqualTo(ContentEncoding.GZIP);
             assertThat(appender.retryOnIoError()).isFalse();
@@ -373,9 +374,9 @@ class AsyncHttpAppenderTest {
 
     @ParameterizedTest
     @EnumSource
-    void shouldRespectHttpMethod(RequestMethod method) {
-        wireMockExt.stubFor(post(wireMockPath).willReturn(method == RequestMethod.POST ? ok() : forbidden()));
-        wireMockExt.stubFor(WireMock.put(wireMockPath).willReturn(method == RequestMethod.PUT ? ok() : forbidden()));
+    void shouldRespectHttpMethod(HttpMethod method) {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(method == HttpMethod.POST ? ok() : forbidden()));
+        wireMockExt.stubFor(WireMock.put(wireMockPath).willReturn(method == HttpMethod.PUT ? ok() : forbidden()));
 
         ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         BuiltConfiguration config = configBuilder.add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
@@ -805,8 +806,8 @@ class AsyncHttpAppenderTest {
 
         try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWithSeparatorInsertionIfMissing.xml")) {
             var log = context.getLogger(getClass());
-            log.info("a");
-            log.info("b");
+            log.info("#a");
+            log.info("b#");
             log.info("c");
             log.info("#d");
             log.info("#e");
@@ -817,7 +818,7 @@ class AsyncHttpAppenderTest {
                 .hasSize(1)
                 .map(LoggedRequest::getBodyAsString)
                 .first()
-                .isEqualTo("(a#b#c#d#e#)");
+                .isEqualTo("(#a#b#c#d#e#)");
     }
 
     @Test
@@ -1259,7 +1260,7 @@ class AsyncHttpAppenderTest {
 
     @ParameterizedTest
     @ValueSource(ints = {200, 500, 1000, 2000})
-    void shouldRespectMaxBatchBytes(int maxBatchBytes) {
+    void shouldRespectSmallMaxBatchBytes(int maxBatchBytes) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 
         final var separator = "#!#";
@@ -1273,7 +1274,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("batchSuffix", suffix)
                         .addAttribute("batchSeparator", separator)
                         .addAttribute("maxBatchBytes", maxBatchBytes)
-                        .addAttribute("maxBatchEvents", Integer.MAX_VALUE)
+                        .addAttribute("maxBatchLogEvents", Integer.MAX_VALUE)
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
@@ -1302,6 +1303,65 @@ class AsyncHttpAppenderTest {
                 .count();
 
         assertThat(numSmallerThanNeeded).isLessThanOrEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void shouldRespectMaxBatchBytesZeroAndOne(int maxBatchBytes) {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchSeparator", separator)
+                        .addAttribute("maxBatchBytes", maxBatchBytes)
+                        .addAttribute("maxBatchLogEvents", Integer.MAX_VALUE)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        assertThat(configBuilder.isValid()).as(configBuilder::toXmlConfiguration).isTrue();
+        var config = configBuilder.build(false);
+
+        var numLogs = 23;
+        try (var context = TestHelpers.loggerContextFromConfig(config)) {
+            var log = context.getLogger(getClass());
+
+            for (int i = 0; i < numLogs; i++) {
+                log.info("a");
+            }
+        }
+
+        wireMockExt.verify(numLogs, postRequestedFor(urlEqualTo(wireMockPath)));
+    }
+
+    @Test
+    void shouldRespectMaxBatchBytesIntMax() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchSeparator", separator)
+                        .addAttribute("maxBatchBytes", Integer.MAX_VALUE)
+                        .addAttribute("maxBatchLogEvents", Integer.MAX_VALUE)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        assertThat(configBuilder.isValid()).as(configBuilder::toXmlConfiguration).isTrue();
+        var config = configBuilder.build(false);
+
+        var longLogLine = "a".repeat(1000);
+        try (var context = TestHelpers.loggerContextFromConfig(config)) {
+            var log = context.getLogger(getClass());
+
+            for (int i = 0; i < 10000; i++) {
+                log.info(longLogLine);
+            }
+        }
+
+        wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {

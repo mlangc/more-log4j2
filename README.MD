@@ -80,7 +80,7 @@ void anywhere() {
 #### Use Case II: Throttling DEBUG Logs
 
 Let's imagine that you want to enable `DEBUG` or `TRACE` logs for parts your application or library code. At the same time, you
-want to be on the save side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
+want to be on the safe side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
 
 ```xml
 
@@ -116,16 +116,17 @@ themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (note that 
 are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
 
 In Java, the behavior of the filter can be summarized as follows:
+
 ```java
 void routingFilter() {
-  for(var route :routes) {
-    if(route.accepts(event)) {
-      route.apply(event);
-      return;
+    for (var route : routes) {
+        if (route.accepts(event)) {
+            route.apply(event);
+            return;
+        }
     }
-  }
 
-  defaultRoute.apply(event);
+    defaultRoute.apply(event);
 }
 ```
 
@@ -218,33 +219,41 @@ Depending on your setup you might want to set
 [log4j2.shutdownHookEnabled](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled)
 to true, to avoid loosing logs on regular shutdowns. `log4j2.shutdownHookEnabled` defaults to false if a `Servlet` class is found
 on your classpath (see
-[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). 
+[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)).
 
 #### Tradeoffs
 
-The implementation makes some tradeoffs, that I clearly want to spell out here. 
+The implementation makes some tradeoffs, that I clearly want to spell out here.
 
 The basic assumption is that logging is an important, but *secondary* concern of your application. If this wasn't the case, you
-would probably not use an asynchronous appender. Therefore, the implementation tries it's best to keep a low profile, and 
-performs most of its work in a separate, single threaded thread pool asynchronously. If an HTTP backend is not keeping up, or
-temporarily unavailabe, unsent log batches will accumulate in an internal buffer (see `maxBatchBufferBytes`). If this buffer runs
-full, batches will be dropped. By default, this will result in a warning being logged to the
+would probably not use an asynchronous appender. Therefore, the implementation tries its best to keep a low profile, and performs
+most of its work in a separate, single threaded thread pool asynchronously. If an HTTP backend is not keeping up, or temporarily
+unavailable, unsent log batches will accumulate in an internal buffer (see `maxBatchBufferBytes`). If this buffer runs full,
+batches will be dropped. By default, this will result in a warning being logged to the
 [StatusLogger](https://logging.apache.org/log4j/2.x/manual/status-logger.html), but you can override this behavior by providing a
 `batchCompletionListener`.
 
 Another tradeoff concerns the way that individual log events are combined into batches: I decided to stick with the simple
-approach of combining rendered log events into batches by using a user supplied prefix, separator and suffix. Support for more 
-advanced schemes to combine log events into batches might be added at a latter point, if a clear use case arises.
+approach of combining rendered log events into batches by using a user supplied prefix, separator and suffix. Support for more
+advanced schemes to combine log events into batches might be added at a later point, if a clear use case arises.
+
+#### Memory Usage & Churn
+
+Memory usage of the appender is controlled by `maxBatchBufferBytes`, which defaults to `50 * maxBatchBytes + 250_000`. My advice
+is to not tweak `maxBatchBufferBytes`, but only `maxBatchBytes`.
+
+The churn is dominated by temporary byte arrays that are used as a backing storage for rendered log events and batches. It should
+be possible to reduce it significantly, however I decided to keep that for a future release.
 
 #### Publishing Logs to Dynatrace
 
-To publish logs to the 
+To publish logs to the
 [Dynatrace Log Monitoring API v2](https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs)
-you can use the following recipe: 
- 
-* Add a dependency to the 
-[JSON template layout](https://logging.apache.org/log4j/2.x/manual/json-template-layout.html)
-that is part of mainline log4j2, but is shipped in a separate JAR.
+you can use the following recipe:
+
+* Add a dependency to the
+  [JSON template layout](https://logging.apache.org/log4j/2.x/manual/json-template-layout.html)
+  that is part of mainline log4j2, but is shipped in a separate JAR.
 * Create a layout file to format your log messages that looks like
   ```json
   {
@@ -384,7 +393,7 @@ you can use the following recipe:
 
 #### Publishing Logs to Grafana
 
-To publish logs to 
+To publish logs to
 [Grafana Loki](https://grafana.com/docs/loki/latest/reference/loki-http-api/#ingest-logs)
 you can use the following recipe:
 
@@ -447,39 +456,35 @@ you can use the following recipe:
 
 #### Configuration
 
-| Parameter                       | Type                                                | Default Value      | Required | Description                                         | Expert Only |
-|---------------------------------|-----------------------------------------------------|--------------------|----------|-----------------------------------------------------|-------------|
-| name                            | String                                              | -                  | Yes      | Appender name                                       | No          |
-| url                             | URI                                                 | -                  | Yes      | Target HTTP endpoint                                | No          |
-| layout (nested element)         | Layout                                              | -                  | Yes      | A layout to format log messages                     | No          |
-| lingerMs                        | int                                                 | 5000               | No       | Max time to wait before sending a batch             | No          |
-| maxBatchBytes                   | int                                                 | 250_000            | No       | Max size of a batch                                 | No          |
-| maxBatchLogEvents               | int                                                 | 1000               | No       | Max number of log events per batch                  | No          |
-| connectTimeoutMs                | int                                                 | 10_000             | No       | HTTP connection timeout                             | No          |
-| readTimeoutMs                   | int                                                 | 10_000             | No       | HTTP read timeout                                   | No          |
-| maxConcurrentRequests           | int                                                 | 5                  | No       | Max concurrent HTTP requests                        | No          |
-| method                          | HTTP method                                         | POST               | No       | HTTP method (POST/PUT)                              | No          |
-| batchPrefix                     | String                                              | ""                 | No       | Prefix for each batch                               | No          |
-| batchSeparator                  | String                                              | "\n"               | No       | Separator between log events in a batch             | No          |
-| batchSuffix                     | String                                              | ""                 | No       | Suffix for each batch                               | No          |
-| httpSuccessCodes                | String                                              | 200, 202, 204      | No       | HTTP status codes considered successful             | No          |
-| httpRetryCodes                  | String                                              | 500, 502, 503, 504 | No       | HTTP status codes that trigger a retry              | No          |
-| retryOnIoError                  | boolean                                             | true               | No       | Retry on I/O errors                                 | No          |
-| retries                         | int                                                 | 5                  | No       | Number of (exponentially backed off) retry attempts | No          |
-| contentEncoding                 | encoding (identity or gzip)                         | identity           | No       | Batch content encoding (identity/gzip)              | No          |
-| filter (nested)                 | Filter                                              | -                  | No       | An optional filter                                  | No          |
-| properties (nested)             | Property[]                                          | -                  | No       | Additional HTTP headers                             | No          |
-| ignoreExceptions                | boolean                                             | true               | No       | Ignore exceptions during logging                    | Yes         |
-| maxBatchBufferBytes             | int                                                 | TODO               | No       | Max total buffer size for batches                   | Yes         |
-| batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing         | No       | Strategy for inserting separators between events    | Yes         |
-| httpClientSslConfigSupplier     | String                                              | null               | No       | Class name for custom SSL config supplier           | Yes         |
-| batchCompletionListener         | String                                              | null               | No       | Class name for custom batch completion listener     | Yes         |
+| Parameter                       | Type                                                | Default Value                  | Required | Description                                                                                                                              | Expert Only (not to be tweaked unless for specific needs) |
+|---------------------------------|-----------------------------------------------------|--------------------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
+| name                            | String                                              | -                              | Yes      | Appender name                                                                                                                            | No                                                        |
+| url                             | URI                                                 | -                              | Yes      | Target HTTP endpoint                                                                                                                     | No                                                        |
+| layout (nested element)         | Layout                                              | -                              | Yes      | A layout to format log messages                                                                                                          | No                                                        |
+| lingerMs                        | int                                                 | 5000                           | No       | Max time to wait before sending a batch                                                                                                  | No                                                        |
+| maxBatchBytes                   | int                                                 | 250_000                        | No       | Max size of a batch (uncompressed). Can be set to `0` to disable batching.                                                               | No                                                        |
+| maxBatchLogEvents               | int                                                 | 1000                           | No       | Max number of log events per batch                                                                                                       | No                                                        |
+| connectTimeoutMs                | int                                                 | 10_000                         | No       | HTTP connection timeout                                                                                                                  | No                                                        |
+| readTimeoutMs                   | int                                                 | 10_000                         | No       | HTTP read timeout                                                                                                                        | No                                                        |
+| maxConcurrentRequests           | int                                                 | 5                              | No       | Max concurrent HTTP requests                                                                                                             | No                                                        |
+| method                          | "POST" or "PUT"                                     | "POST"                         | No       | HTTP method (POST/PUT)                                                                                                                   | No                                                        |
+| batchPrefix                     | String                                              | ""                             | No       | Prefix for each batch                                                                                                                    | No                                                        |
+| batchSeparator                  | String                                              | "\n"                           | No       | Separator between log events in a batch                                                                                                  | No                                                        |
+| batchSuffix                     | String                                              | ""                             | No       | Suffix for each batch                                                                                                                    | No                                                        |
+| httpSuccessCodes                | String                                              | 200, 202, 204                  | No       | HTTP status codes considered successful                                                                                                  | No                                                        |
+| httpRetryCodes                  | String                                              | 429, 500, 502, 503, 504        | No       | HTTP status codes that trigger a retry                                                                                                   | No                                                        |
+| retryOnIoError                  | boolean                                             | true                           | No       | Retry on I/O errors                                                                                                                      | No                                                        |
+| retries                         | int                                                 | 5                              | No       | Number of (exponentially backed off) retry attempts                                                                                      | No                                                        |
+| contentEncoding                 | encoding (identity or gzip)                         | identity                       | No       | Batch content encoding (identity/gzip)                                                                                                   | No                                                        |
+| filter (nested)                 | Filter                                              | -                              | No       | An optional filter                                                                                                                       | No                                                        |
+| properties (nested)             | Property[]                                          | -                              | No       | Additional HTTP headers                                                                                                                  | No                                                        |
+| httpClientSslConfigSupplier     | String                                              | null                           | No       | Class name for custom SSL config supplier                                                                                                | No                                                        |
+| batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing                     | No       | Strategy for inserting separators between events. `if_missing` means that separators are only inserted, if they are not already present. | No                                                        |
+| ignoreExceptions                | boolean                                             | true                           | No       | Ignore exceptions during logging                                                                                                         | Yes                                                       |
+| maxBatchBufferBytes             | int                                                 | `50 * maxBatchBytes + 250_000` | No       | Max total buffer size for batches (potentially compressed)                                                                               | Yes                                                       |
+| batchCompletionListener         | String                                              | null                           | No       | Class name for custom batch completion listener                                                                                          | Yes                                                       |
 
 ## Additional Notes
-
-### Is that all?
-
-I have some additional ideas, but would like to start small, and collect some feedback first.
 
 ### Why not extend log4j2 directly?
 

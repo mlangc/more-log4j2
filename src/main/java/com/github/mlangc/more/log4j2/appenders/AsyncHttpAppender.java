@@ -70,7 +70,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final HttpClientManager httpClientManager;
     private final NanoClock ticker;
     private final Configuration configuration;
-    private final RequestMethod method;
+    private final HttpMethod method;
     private final byte[] batchPrefix;
     private final byte[] batchSeparator;
     private final byte[] batchSuffix;
@@ -133,7 +133,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         void onBatchCompletionEvent(BatchCompletionEvent completionEvent);
     }
 
-    public enum RequestMethod {
+    public enum HttpMethod {
         POST, PUT
     }
 
@@ -148,7 +148,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     AsyncHttpAppender(
             String name, URI url, Filter filter, Layout<? extends Serializable> layout, boolean ignoreExceptions, Property[] properties,
             int maxBatchBytes, int lingerMs, int maxConcurrentRequests,
-            int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, RequestMethod method,
+            int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, HttpMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
             boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener) {
         super(name, filter, layout, ignoreExceptions, properties);
@@ -248,14 +248,14 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "connectTimeoutMs", defaultInt = 10_000) int connectTimeoutMs,
             @PluginAttribute(value = "readTimeoutMs", defaultInt = 10_000) int readTimeoutMs,
             @PluginAttribute(value = "maxConcurrentRequests", defaultInt = 5) int maxConcurrentRequests,
-            @PluginAttribute(value = "method", defaultString = "POST") RequestMethod method,
+            @PluginAttribute(value = "method", defaultString = "POST") HttpMethod method,
             @PluginAttribute(value = "batchPrefix") String batchPrefix,
             @PluginAttribute(value = "batchSeparator") String batchSeparator,
             @PluginAttribute(value = "batchSuffix") String batchSuffix,
             @PluginAttribute(value = "batchSeparatorInsertionStrategy", defaultString = "if_missing") BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy,
             @PluginAttribute(value = "retries", defaultInt = 5) int retries,
             @PluginAttribute(value = "httpSuccessCodes", defaultString = "200,202,204") String httpSuccessCodes,
-            @PluginAttribute(value = "httpRetryCodes", defaultString = "500,502,503,504") String httpRetryCodes,
+            @PluginAttribute(value = "httpRetryCodes", defaultString = "429,500,502,503,504") String httpRetryCodes,
             @PluginAttribute(value = "retryOnIoError", defaultBoolean = true) boolean retryOnIoError,
             @PluginAttribute(value = "contentEncoding", defaultString = "identity") ContentEncoding contentEncoding,
             @PluginAttribute(value = "httpClientSslConfigSupplier") String httpClientSslConfigSupplier,
@@ -278,7 +278,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 batchSuffix == null ? EMPTY_BYTE_ARRAY : batchSuffix.getBytes(StandardCharsets.UTF_8),
                 retries, contentEncoding,
                 maxBatchBufferBytes == Integer.MIN_VALUE
-                        ? (maxBatchBytes > 0 ? clampedMul(maxBatchBytes, 50) : 250_000_000)
+                        ? maxBatchBufferBytesFromMaxBatchBytes(maxBatchBytes)
                         : maxBatchBufferBytes,
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
@@ -287,6 +287,11 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     private static int clampedMul(int a, int b) {
         return (int) Math.min(Integer.MAX_VALUE, (long) a * b);
+    }
+
+    private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes) {
+        var maxBatchBufferBytes0 = 250_000;
+        return Math.toIntExact(Math.min(Integer.MAX_VALUE, maxBatchBytes * 50 + maxBatchBufferBytes0));
     }
 
     @Override
@@ -581,7 +586,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return new String(batchSuffix, StandardCharsets.UTF_8);
     }
 
-    RequestMethod method() {
+    HttpMethod method() {
         return method;
     }
 

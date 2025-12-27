@@ -49,12 +49,12 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         new BenchmarkTemplate() {
             @Override
             LoadCfg loadConfig() {
-                return new LoadCfg(1000, 1000);
+                return new LoadCfg(100_000, 1000);
             }
 
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.grafanaLokiV1PushOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
             }
 
             @Override
