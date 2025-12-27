@@ -280,8 +280,8 @@ you can use the following recipe:
     <Appenders>
 
         <!--
-            DYNATRACE_API_V2_LOGS_INGEST should point to ingest the ingest V2 API as outlined
-            in https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs.
+            DYNATRACE_API_V2_LOGS_INGEST should point the ingest V2 API as outlined in
+            https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs.
 
             DYNATRACE_API_TOKEN needs to point to a valid API token.
             See https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/basics/dynatrace-api-authentication.
