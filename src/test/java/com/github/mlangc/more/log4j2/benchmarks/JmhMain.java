@@ -32,8 +32,8 @@ public class JmhMain {
         new Runner(new OptionsBuilder()
                 .resultFormat(ResultFormatType.JSON)
                 .include(Pattern.quote(RandomInfoLogBaselineBenchmark.class.getSimpleName() + ".") + ".*" + Pattern.quote("log"))
-                .threads(4)
-                .addProfiler("jfr")
+                .threads(1)
+                //.addProfiler("jfr")
                 .build()).run();
     }
 }

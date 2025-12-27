@@ -25,8 +25,21 @@
     </Properties>
 
     <Appenders>
-        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}">
-            <PatternLayout pattern="${pattern}"/>
+        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}"
+                   batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener">
+            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
+            <Property name="Content-Type" value="application/jsonl"/>
+            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <EventTemplateAdditionalField key="env" value="perf_test"/>
+                <EventTemplateAdditionalField key="source" value="AsyncHttpAppender.perf_test"/>
+                <EventTemplateAdditionalField key="hostname" value="test"/>
+                <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
+            </JsonTemplateLayout>
         </AsyncHttp>
 
         <Console name="Console">

@@ -237,6 +237,16 @@ Another tradeoff concerns the way that individual log events are combined into b
 approach of combining rendered log events into batches by using a user supplied prefix, separator and suffix. Support for more
 advanced schemes to combine log events into batches might be added at a later point, if a clear use case arises.
 
+#### Performance
+
+In principle, the `AsyncHttpAppender` can sustain throughputs similar to a file appender, in the ballpark of millions of log 
+events per second, if the configured HTTP backend is able to absorb the traffic fast enough.
+
+In more realistic tests that I performed with the ingest APIs of Dynatrace, Datadog and Grafana, I was able to sustain ingest
+rates of several hundred thousand log events per second. Since compression rates around 20 are quite common for logs, especially
+if they are enriched with effectively constant attributes like hostnames, service names and so on, setting
+`contentEncoding="gzip"` is normally a good idea.
+
 #### Memory Usage & Churn
 
 Memory usage of the appender is controlled by `maxBatchBufferBytes`, which defaults to `50 * maxBatchBytes + 250_000`. My advice

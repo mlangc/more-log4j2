@@ -49,7 +49,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         new BenchmarkTemplate() {
             @Override
             LoadCfg loadConfig() {
-                return new LoadCfg(100_000, 1000);
+                return new LoadCfg(200_000, 5000);
             }
 
             @Override
@@ -59,7 +59,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
             @Override
             int parallelism() {
-                return 1;
+                return 4;
             }
         }.run();
     }

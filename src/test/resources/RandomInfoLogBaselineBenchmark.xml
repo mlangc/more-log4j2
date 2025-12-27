@@ -21,14 +21,24 @@
 
 <Configuration status="WARN">
     <Properties>
-        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %c{2} - %msg%n"/>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n"/>
     </Properties>
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="${pattern}"/>
         </Console>
         <File name="File" fileName="test.log" immediateFlush="false">
-            <PatternLayout pattern="${pattern}"/>
+            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <EventTemplateAdditionalField key="env" value="perf_test"/>
+                <EventTemplateAdditionalField key="source" value="AsyncHttpAppender.perf_test"/>
+                <EventTemplateAdditionalField key="hostname" value="test"/>
+                <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
+            </JsonTemplateLayout>
         </File>
     </Appenders>
     <Loggers>
