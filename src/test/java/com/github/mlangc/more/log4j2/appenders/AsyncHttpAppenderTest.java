@@ -1154,7 +1154,7 @@ class AsyncHttpAppenderTest {
         }
 
         var batchesDropped = TestBatchCompletionListener.getLastBatchCompletionEvents().stream()
-                .filter(evt -> evt.completionType() instanceof AsyncHttpAppender.BatchDropped)
+                .filter(evt -> evt.type() instanceof AsyncHttpAppender.BatchDropped)
                 .count();
 
         assertThat(batchesDropped).isPositive();
@@ -1192,7 +1192,7 @@ class AsyncHttpAppenderTest {
                         .as("now=%s", Instant.now())
                         .hasSize(1)
                         .allSatisfy(evt -> {
-                            assertThat(evt.completionType()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, deliveredSuccess -> {
+                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, deliveredSuccess -> {
                                 assertThat(deliveredSuccess.httpStatus().code()).isEqualTo(200);
                                 assertThat(deliveredSuccess.tries()).isOne();
                             });
@@ -1205,7 +1205,7 @@ class AsyncHttpAppenderTest {
                 assertThat(TestBatchCompletionListener.getLastBatchCompletionEvents())
                         .hasSize(2)
                         .last().satisfies(evt -> {
-                            assertThat(evt.completionType()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveryFailed.class, deliveryFailed -> {
+                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveryFailed.class, deliveryFailed -> {
                                 assertThat(deliveryFailed.exception()).isNotNull();
                                 assertThat(deliveryFailed.tries()).isOne();
                             });
@@ -1217,9 +1217,9 @@ class AsyncHttpAppenderTest {
             Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
                 assertThat(TestBatchCompletionListener.getLastBatchCompletionEvents())
                         .hasSize(3)
-                        .allSatisfy(evt -> assertThat(evt.source()).isSameAs(appender))
+                        .allSatisfy(evt -> assertThat(evt.context().source()).isSameAs(appender))
                         .last().satisfies(evt -> {
-                            assertThat(evt.completionType()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredError.class, deliveredError -> {
+                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredError.class, deliveredError -> {
                                 assertThat(deliveredError.httpStatus().code()).isEqualTo(400);
                                 assertThat(deliveredError.tries()).isOne();
                             });

@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,6 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
+import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.HttpStatusWithTries;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
@@ -33,6 +34,7 @@ import org.apache.logging.log4j.core.config.plugins.*;
 import org.apache.logging.log4j.core.config.plugins.validation.constraints.Required;
 import org.apache.logging.log4j.core.util.Log4jThreadFactory;
 import org.apache.logging.log4j.core.util.NanoClock;
+import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.apache.logging.log4j.status.StatusLogger;
 
 import java.io.ByteArrayOutputStream;
@@ -50,6 +52,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.zip.GZIPOutputStream;
 
@@ -57,7 +60,6 @@ import static java.util.Objects.requireNonNull;
 
 @Plugin(name = "AsyncHttp", category = Node.CATEGORY, elementType = Appender.ELEMENT_TYPE, printObject = true)
 public class AsyncHttpAppender extends AbstractAppender {
-    private static final long DEFAULT_TIMEOUT_SECS = 15;
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     private final URI url;
@@ -81,6 +83,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final int[] httpRetryCodes;
     private final boolean retryOnIoError;
     private final BatchCompletionListener batchCompletionListener;
+    private final int shutdownTimeoutMs;
 
     private final Set<FutureHolder> trackedFutures = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Lock lock = new ReentrantLock();
@@ -123,11 +126,10 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public static final BatchDropped BATCH_DROPPED = new BatchDropped();
 
-    public record BatchCompletionEvent(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, BatchCompletionType completionType) {
-        private BatchCompletionEvent(AsyncHttpAppender source, Batch batch, BatchCompletionType completionType) {
-            this(source, batch.uncompressedBytes, batch.effectiveBytes(), batch.logEvents, completionType);
-        }
-    }
+    public record BatchCompletionContext(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, long currentBufferBytes, long maxBufferBytes,
+                                         int currentBufferedBatches) { }
+
+    public record BatchCompletionEvent(BatchCompletionContext context, BatchCompletionType type) { }
 
     public interface BatchCompletionListener {
         void onBatchCompletionEvent(BatchCompletionEvent completionEvent);
@@ -150,8 +152,9 @@ public class AsyncHttpAppender extends AbstractAppender {
             int maxBatchBytes, int lingerMs, int maxConcurrentRequests,
             int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, HttpMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
-            boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener) {
+            boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener, int shutdownTimeoutMs) {
         super(name, filter, layout, ignoreExceptions, properties);
+        this.shutdownTimeoutMs = shutdownTimeoutMs;
 
         if (maxBatchBufferBytes <= 0) {
             throw new IllegalArgumentException("maxBatchBufferBytes must not by <= 0, but got " + maxBatchBufferBytes);
@@ -260,6 +263,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "contentEncoding", defaultString = "identity") ContentEncoding contentEncoding,
             @PluginAttribute(value = "httpClientSslConfigSupplier") String httpClientSslConfigSupplier,
             @PluginAttribute(value = "batchCompletionListener") String batchCompletionListener,
+            @PluginAttribute(value = "shutdownTimeoutMs", defaultInt = 15_000) int shutdownTimeoutMs,
             @PluginElement("Filter") Filter filter,
             @PluginElement("Layout") Layout<? extends Serializable> layout,
             @PluginElement("Properties") Property[] properties,
@@ -282,7 +286,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                         : maxBatchBufferBytes,
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
-                retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener);
+                retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener, shutdownTimeoutMs);
     }
 
     private static int clampedMul(int a, int b) {
@@ -366,7 +370,10 @@ public class AsyncHttpAppender extends AbstractAppender {
             bufferedBatches.addLast(batch);
             runAsyncTracked("drainBufferedBatches", this::drainBufferedBatches, () -> { });
         } else {
-            batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(this, batch, BATCH_DROPPED));
+            batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
+                    new BatchCompletionContext(
+                            this, batch.uncompressedBytes, batch.effectiveBytes(), batch.logEvents, currentBufferBytes, maxBatchBufferBytes, bufferedBatches.size()),
+                    BATCH_DROPPED));
         }
 
         currentBatch.clear();
@@ -389,32 +396,44 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                 bufferedBatches.removeFirst();
                 int releaseBytes = oldestBatch.data.length;
+                long uncompressedBytes = oldestBatch.uncompressedBytes();
+                int logEvents = oldestBatch.logEvents();
 
-                runAsyncTracked("sendBatchBytes", () -> sendBatchAndEventuallyRetry(oldestBatch), () -> {
-                    allowedInFlight.release();
-                    currentBufferBytes -= releaseBytes;
-                });
+                runAsyncTracked(
+                        "sendBatchBytes",
+                        (Supplier<CompletableFuture<HttpStatusWithTries>>) () -> retryManager.run(() -> sendBatch(oldestBatch)),
+                        (response, throwable) -> {
+                            allowedInFlight.release();
+
+                            long bufferBytesSnapshot;
+                            int bufferedBatchesSnapshot;
+                            lock.lock();
+                            try {
+                                currentBufferBytes -= releaseBytes;
+                                bufferBytesSnapshot = currentBufferBytes;
+                                bufferedBatchesSnapshot = bufferedBatches.size();
+                            } finally {
+                                lock.unlock();
+                            }
+
+                            BatchCompletionType completionType = null;
+                            if (response != null) {
+                                completionType = new BatchDeliveredSuccess(response.status(), response.tries());
+                            } else if (throwable instanceof HttpErrorResponseException errorResponseException) {
+                                completionType = new BatchDeliveredError(errorResponseException.httpStatus(), errorResponseException.tries());
+                            } else if (throwable instanceof HttpRetryManagerException retryManagerException) {
+                                completionType = new BatchDeliveryFailed(retryManagerException, retryManagerException.tries());
+                            } else if (throwable instanceof Exception exception) {
+                                completionType = new BatchDeliveryFailed(exception, -1);
+                            }
+
+                            if (completionType != null) {
+                                batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
+                                        new BatchCompletionContext(this, uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, maxBatchBufferBytes, bufferedBatchesSnapshot), completionType));
+                            }
+                        });
             }
         });
-    }
-
-    private CompletableFuture<Void> sendBatchAndEventuallyRetry(Batch batch) {
-        return retryManager.run(() -> sendBatch(batch)).whenComplete((response, throwable) -> {
-            BatchCompletionType completionType = null;
-            if (response != null) {
-                completionType = new BatchDeliveredSuccess(response.status(), response.tries());
-            } else if (throwable instanceof HttpErrorResponseException errorResponseException) {
-                completionType = new BatchDeliveredError(errorResponseException.httpStatus(), errorResponseException.tries());
-            } else if (throwable instanceof HttpRetryManagerException retryManagerException) {
-                completionType = new BatchDeliveryFailed(retryManagerException, retryManagerException.tries());
-            } else if (throwable instanceof Exception exception) {
-                completionType = new BatchDeliveryFailed(exception, -1);
-            }
-
-            if (completionType != null) {
-                batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(this, batch, completionType));
-            }
-        }).thenApply(ignore -> null);
     }
 
     private CompletableFuture<HttpStatus> sendBatch(Batch batch) {
@@ -598,6 +617,10 @@ public class AsyncHttpAppender extends AbstractAppender {
         return httpClientManager.httpClientSslConfigSupplier;
     }
 
+    public BatchCompletionListener batchCompletionListener() {
+        return batchCompletionListener;
+    }
+
     private Batch createBatch(List<byte[]> events) {
         byte[] res = EMPTY_BYTE_ARRAY;
         if (!events.isEmpty()) {
@@ -652,8 +675,8 @@ public class AsyncHttpAppender extends AbstractAppender {
     @Override
     public boolean stop(long timeout, TimeUnit timeUnit) {
         if (timeout <= 0) {
-            timeout = DEFAULT_TIMEOUT_SECS;
-            timeUnit = java.util.concurrent.TimeUnit.SECONDS;
+            timeout = shutdownTimeoutMs;
+            timeUnit = TimeUnit.MILLISECONDS;
         }
 
         setStopping();
@@ -741,14 +764,14 @@ public class AsyncHttpAppender extends AbstractAppender {
         return retryOnIoError;
     }
 
-    private void runAsyncTracked(String jobName, Supplier<CompletableFuture<?>> lazyAsyncOp, Runnable afterOp) {
+    private <T> void runAsyncTracked(String jobName, Supplier<CompletableFuture<T>> lazyAsyncOp, BiConsumer<T, Throwable> afterOp) {
         FutureHolder holder = new FutureHolder(jobName);
         trackedFutures.add(holder);
 
         try {
             holder.future = lazyAsyncOp.get().whenComplete((ignore, e) -> {
                 trackedFutures.remove(holder);
-                afterOp.run();
+                afterOp.accept(ignore, e);
 
                 if (e != null) {
                     getStatusLogger().warn("Error running job {}", holder.jobName, e);
@@ -756,13 +779,17 @@ public class AsyncHttpAppender extends AbstractAppender {
             });
         } catch (Exception e) {
             trackedFutures.remove(holder);
-            afterOp.run();
+            afterOp.accept(null, e);
             getStatusLogger().error("Error submitting job {} to executor {}", holder.jobName, executor(), e);
         }
     }
 
+    private void runAsyncTracked(String jobName, Runnable op, BiConsumer<Void, Throwable> afterOp) {
+        runAsyncTracked(jobName, (Supplier<CompletableFuture<Void>>) () -> CompletableFuture.runAsync(op, executor()), afterOp);
+    }
+
     private void runAsyncTracked(String jobName, Runnable op, Runnable afterOp) {
-        runAsyncTracked(jobName, () -> CompletableFuture.runAsync(op, executor()), afterOp);
+        runAsyncTracked(jobName, op, (ignore1, ignore2) -> afterOp.run());
     }
 
     private boolean isSeparatorNeeded(byte[] left, byte[] right) {
@@ -787,29 +814,28 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public static void logBatchCompletionEvent(Logger log, Executor executor, BatchCompletionEvent event) {
         Logger actualLog;
-        if (!(log instanceof StatusLogger) && !event.source.isStarted()) {
+        if (!(log instanceof StatusLogger) && !event.context.source.isStarted()) {
             actualLog = StatusLogger.getLogger();
         } else {
             actualLog = log;
         }
 
         Runnable logBatchCompletion = () -> {
-            double compressionRate = (double) event.bytesUncompressed / event.bytesEffective;
+            Supplier<String> contextString = () -> {
+                double compressionRate = (double) event.context.bytesUncompressed / event.context.bytesEffective;
+                return event.context + " (compressionRate=" + compressionRate + ")";
+            };
 
-            if (event.completionType instanceof BatchDeliveredError deliveredError) {
-                actualLog.warn("Error delivering batch of {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events: {}",
-                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents, deliveredError.httpStatus);
-            } else if (event.completionType instanceof BatchDeliveryFailed deliveryFailed) {
-                actualLog.warn("Delivery of batch with {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events failed",
-                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents, deliveryFailed.exception);
-            } else if (event.completionType instanceof BatchDropped) {
-                actualLog.warn("Dropping batch of {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events because the HTTP backend is not keeping up",
-                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents);
-            } else if (event.completionType instanceof BatchDeliveredSuccess deliveredSuccess) {
-                actualLog.info("Delivered batch of {} bytes ({} bytes uncompressed with a compression rate of {}) and {} log events with {}",
-                        event.bytesEffective, event.bytesUncompressed, compressionRate, event.logEvents, deliveredSuccess.httpStatus);
+            if (event.type instanceof BatchDeliveredError deliveredError) {
+                actualLog.warn(() -> new ParameterizedMessage("Error delivering batch {}: {}", contextString.get(), deliveredError.httpStatus));
+            } else if (event.type instanceof BatchDeliveryFailed deliveryFailed) {
+                actualLog.warn(() -> new ParameterizedMessage("Delivery of batch {} failed", contextString.get(), deliveryFailed.exception));
+            } else if (event.type instanceof BatchDropped) {
+                actualLog.warn(() -> new ParameterizedMessage("Dropping batch {} because the HTTP backend is not keeping up", contextString.get()));
+            } else if (event.type instanceof BatchDeliveredSuccess deliveredSuccess) {
+                actualLog.info(() -> new ParameterizedMessage("Delivered batch {} with {}", contextString.get(), deliveredSuccess.httpStatus));
             } else {
-                actualLog.error("Received event with unknown completionType: {}", event);
+                actualLog.error(() -> new ParameterizedMessage("Received event {} with unknown type: {}", contextString.get(), event.type));
             }
         };
 
