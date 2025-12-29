@@ -84,6 +84,8 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final boolean retryOnIoError;
     private final BatchCompletionListener batchCompletionListener;
     private final int shutdownTimeoutMs;
+    private final int maxBlockOnOverflowMs;
+    private final int maxBatchBufferBatches;
 
     private final Set<FutureHolder> trackedFutures = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Lock lock = new ReentrantLock();
@@ -126,7 +128,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public static final BatchDropped BATCH_DROPPED = new BatchDropped();
 
-    public record BatchCompletionContext(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, long currentBufferBytes, long maxBufferBytes,
+    public record BatchCompletionContext(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, long currentBufferBytes,
                                          int currentBufferedBatches) { }
 
     public record BatchCompletionEvent(BatchCompletionContext context, BatchCompletionType type) { }
@@ -152,9 +154,12 @@ public class AsyncHttpAppender extends AbstractAppender {
             int maxBatchBytes, int lingerMs, int maxConcurrentRequests,
             int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, HttpMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
-            boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener, int shutdownTimeoutMs) {
+            boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener, int shutdownTimeoutMs,
+            int maxBlockOnOverflowMs, int maxBatchBufferBatches) {
         super(name, filter, layout, ignoreExceptions, properties);
         this.shutdownTimeoutMs = shutdownTimeoutMs;
+        this.maxBlockOnOverflowMs = maxBlockOnOverflowMs;
+        this.maxBatchBufferBatches = maxBatchBufferBatches;
 
         if (maxBatchBufferBytes <= 0) {
             throw new IllegalArgumentException("maxBatchBufferBytes must not by <= 0, but got " + maxBatchBufferBytes);
@@ -246,6 +251,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "lingerMs", defaultInt = 5000) int lingerMs,
             @PluginAttribute(value = "maxBatchBytes", defaultInt = 250_000) int maxBatchBytes,
             @PluginAttribute(value = "maxBatchBufferBytes", defaultInt = Integer.MIN_VALUE) int maxBatchBufferBytes,
+            @PluginAttribute(value = "maxBatchBufferBatches", defaultInt = 50) int maxBatchBufferBatches,
             @PluginAttribute(value = "maxBatchLogEvents", defaultInt = 1000) int maxBatchLogEvents,
             @PluginAttribute(value = "ignoreExceptions", defaultBoolean = true) boolean ignoreExceptions,
             @PluginAttribute(value = "connectTimeoutMs", defaultInt = 10_000) int connectTimeoutMs,
@@ -264,6 +270,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "httpClientSslConfigSupplier") String httpClientSslConfigSupplier,
             @PluginAttribute(value = "batchCompletionListener") String batchCompletionListener,
             @PluginAttribute(value = "shutdownTimeoutMs", defaultInt = 15_000) int shutdownTimeoutMs,
+            @PluginAttribute(value = "maxBlockOnOverflowMs") int maxBlockOnOverflowMs,
             @PluginElement("Filter") Filter filter,
             @PluginElement("Layout") Layout<? extends Serializable> layout,
             @PluginElement("Properties") Property[] properties,
@@ -287,7 +294,8 @@ public class AsyncHttpAppender extends AbstractAppender {
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
                 retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
-                shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs);
+                shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs,
+                maxBlockOnOverflowMs, maxBatchBufferBatches);
     }
 
     private static int clampedMul(int a, int b) {
@@ -373,7 +381,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         } else {
             batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
                     new BatchCompletionContext(
-                            this, batch.uncompressedBytes, batch.effectiveBytes(), batch.logEvents, currentBufferBytes, maxBatchBufferBytes, bufferedBatches.size()),
+                            this, batch.uncompressedBytes, batch.effectiveBytes(), batch.logEvents, currentBufferBytes, bufferedBatches.size()),
                     BATCH_DROPPED));
         }
 
@@ -430,7 +438,8 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                             if (completionType != null) {
                                 batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
-                                        new BatchCompletionContext(this, uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, maxBatchBufferBytes, bufferedBatchesSnapshot), completionType));
+                                        new BatchCompletionContext(this, uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot),
+                                        completionType));
                             }
                         });
             }
@@ -574,7 +583,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return maxBatchBytes;
     }
 
-    int maxBatchBufferBytes() {
+    public int maxBatchBufferBytes() {
         return maxBatchBufferBytes;
     }
 
@@ -616,6 +625,18 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     String httpClientSslConfigSupplier() {
         return httpClientManager.httpClientSslConfigSupplier;
+    }
+
+    int maxBlockOnOverflowMs() {
+        return maxBlockOnOverflowMs;
+    }
+
+    int shutdownTimeoutMs() {
+        return shutdownTimeoutMs;
+    }
+
+    public int maxBatchBufferBatches() {
+        return maxBatchBufferBatches;
     }
 
     public BatchCompletionListener batchCompletionListener() {
@@ -824,7 +845,9 @@ public class AsyncHttpAppender extends AbstractAppender {
         Runnable logBatchCompletion = () -> {
             Supplier<String> contextString = () -> {
                 double compressionRate = (double) event.context.bytesUncompressed / event.context.bytesEffective;
-                return event.context + " (compressionRate=" + compressionRate + ")";
+                return event.context + " (compressionRate=" + compressionRate +
+                       ", maxBatchBufferBytes=" + event.context.source.maxBatchBufferBytes +
+                       ", maxBatchBufferBatches=" + event.context.source.maxBatchBufferBatches + ")";
             };
 
             if (event.type instanceof BatchDeliveredError deliveredError) {
