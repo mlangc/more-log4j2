@@ -286,7 +286,8 @@ public class AsyncHttpAppender extends AbstractAppender {
                         : maxBatchBufferBytes,
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
-                retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener, shutdownTimeoutMs);
+                retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
+                shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs);
     }
 
     private static int clampedMul(int a, int b) {

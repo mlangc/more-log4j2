@@ -77,6 +77,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
+import java.util.function.IntToLongFunction;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -1362,6 +1363,43 @@ class AsyncHttpAppenderTest {
         }
 
         wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
+    }
+
+    @Test
+    void shouldRespectShutdownMs() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
+
+        IntToLongFunction logAndClose = shutdownMs -> {
+            var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+            configBuilder = configBuilder
+                    .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                            .addAttribute("url", wireMockHttpUrl)
+                            .addAttribute("maxBatchLogEvents", 1)
+                            .addAttribute("maxConcurrentRequests", 1)
+                            .addAttribute("shutdownTimeoutMs", shutdownMs)
+                            .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                    .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+            assertThat(configBuilder.isValid()).isTrue();
+            long nanos0;
+            try (var context = TestHelpers.loggerContextFromConfig(configBuilder.build())) {
+                var log = context.getLogger(getClass());
+                nanos0 = System.nanoTime();
+
+                for (int i = 0; i < 25; i++) {
+                    log.info("test");
+                }
+            }
+
+            return System.nanoTime() - nanos0;
+        };
+
+        var elapsedMillis = IntStream.of(1, 1, 1, 1, 5, 10, 20, -1)
+                .mapToLong(logAndClose)
+                .skip(3) // <-- the first few iterations are considered "warmup" runs
+                .toArray();
+
+        assertThat(elapsedMillis).isSorted();
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {
