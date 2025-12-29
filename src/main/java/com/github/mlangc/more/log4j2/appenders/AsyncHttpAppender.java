@@ -298,10 +298,6 @@ public class AsyncHttpAppender extends AbstractAppender {
                 maxBlockOnOverflowMs, maxBatchBufferBatches);
     }
 
-    private static int clampedMul(int a, int b) {
-        return (int) Math.min(Integer.MAX_VALUE, (long) a * b);
-    }
-
     private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes) {
         var maxBatchBufferBytes0 = 250_000;
         return Math.toIntExact(Math.min(Integer.MAX_VALUE, maxBatchBytes * 50 + maxBatchBufferBytes0));

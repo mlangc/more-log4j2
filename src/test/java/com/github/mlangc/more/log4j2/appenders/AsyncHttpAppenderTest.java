@@ -256,10 +256,6 @@ class AsyncHttpAppenderTest {
                 return List.copyOf(lastBatchCompletionEvents);
             }
         }
-
-        synchronized void reset() {
-            lastBatchCompletionEvents.clear();
-        }
     }
 
     @Test
