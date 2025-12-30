@@ -27,7 +27,13 @@
         <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" contentEncoding="gzip"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
                    maxBatchBytes="1000000" maxBatchLogEvents="50000" httpSuccessCodes="204" httpRetryCodes="429,503"
-                   shutdownTimeoutMs="300000" maxBatchBufferBytes="10000000">
+                   shutdownTimeoutMs="300000" maxBatchBufferBatches="100"
+                   maxBlockOnOverflowMs="50000">
+
+            <OverflowAppenderRef ref="Console">
+                <BurstFilter rate="1" maxBurst="3"/>
+            </OverflowAppenderRef>
+
             <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
             <Property name="Content-Type" value="application/jsonl"/>
             <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">

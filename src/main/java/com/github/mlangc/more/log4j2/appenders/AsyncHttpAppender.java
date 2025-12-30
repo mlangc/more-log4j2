@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,6 +27,7 @@ import org.apache.logging.log4j.core.Layout;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.appender.AbstractManager;
+import org.apache.logging.log4j.core.config.AppenderControl;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.Node;
 import org.apache.logging.log4j.core.config.Property;
@@ -50,6 +51,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
@@ -86,9 +88,11 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final int shutdownTimeoutMs;
     private final int maxBlockOnOverflowMs;
     private final int maxBatchBufferBatches;
+    private final OverflowAppenderRef overflowAppenderRef;
 
     private final Set<FutureHolder> trackedFutures = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Lock lock = new ReentrantLock();
+    private final Condition lockCondition;
     private final Semaphore allowedInFlight;
     private final List<byte[]> currentBatch = new ArrayList<>();
     private long currentBatchBytes;
@@ -96,6 +100,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     private long currentBufferBytes;
     private long firstRecordNanos;
     private ScheduledFuture<?> scheduledFlush;
+    private AppenderControl overflowAppenderControl;
 
     private record Batch(byte[] data, long uncompressedBytes, int logEvents) {
         int effectiveBytes() {
@@ -119,14 +124,6 @@ public class AsyncHttpAppender extends AbstractAppender {
     public record BatchDeliveredError(HttpStatus httpStatus, int tries) implements BatchCompletionType { }
 
     public record BatchDeliveryFailed(Exception exception, int tries) implements BatchCompletionType { }
-
-    public static final class BatchDropped implements BatchCompletionType {
-        private BatchDropped() {
-
-        }
-    }
-
-    public static final BatchDropped BATCH_DROPPED = new BatchDropped();
 
     public record BatchCompletionContext(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, long currentBufferBytes,
                                          int currentBufferedBatches) { }
@@ -155,11 +152,12 @@ public class AsyncHttpAppender extends AbstractAppender {
             int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, HttpMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
             boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener, int shutdownTimeoutMs,
-            int maxBlockOnOverflowMs, int maxBatchBufferBatches) {
+            int maxBlockOnOverflowMs, int maxBatchBufferBatches, OverflowAppenderRef overflowAppenderRef) {
         super(name, filter, layout, ignoreExceptions, properties);
         this.shutdownTimeoutMs = shutdownTimeoutMs;
         this.maxBlockOnOverflowMs = maxBlockOnOverflowMs;
         this.maxBatchBufferBatches = maxBatchBufferBatches;
+        this.overflowAppenderRef = overflowAppenderRef;
 
         if (maxBatchBufferBytes <= 0) {
             throw new IllegalArgumentException("maxBatchBufferBytes must not by <= 0, but got " + maxBatchBufferBytes);
@@ -222,6 +220,24 @@ public class AsyncHttpAppender extends AbstractAppender {
         } else {
             this.batchCompletionListener = AsyncHttpAppender::defaultOnBatchCompletionEventListener;
         }
+
+        if (maxBlockOnOverflowMs > 0) {
+            lockCondition = lock.newCondition();
+        } else {
+            lockCondition = null;
+        }
+    }
+
+    @Override
+    public void start() {
+        if (overflowAppenderRef != null) {
+            doWithLock(() -> {
+                var overflowAppender = requireNonNull(configuration.<Appender>getAppender(overflowAppenderRef.ref()));
+                overflowAppenderControl = new AppenderControl(overflowAppender, overflowAppenderRef.level(), overflowAppenderRef.filter());
+            });
+        }
+
+        super.start();
     }
 
     private static boolean intersects(int[] left, int[] right) {
@@ -274,6 +290,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginElement("Filter") Filter filter,
             @PluginElement("Layout") Layout<? extends Serializable> layout,
             @PluginElement("Properties") Property[] properties,
+            @PluginElement("OverflowAppenderRef") OverflowAppenderRef overflowAppenderRef,
             @PluginConfiguration Configuration configuration) {
         var managerData = new HttpClientManagerData(Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(readTimeoutMs), httpClientSslConfigSupplier);
 
@@ -289,24 +306,27 @@ public class AsyncHttpAppender extends AbstractAppender {
                 batchSuffix == null ? EMPTY_BYTE_ARRAY : batchSuffix.getBytes(StandardCharsets.UTF_8),
                 retries, contentEncoding,
                 maxBatchBufferBytes == Integer.MIN_VALUE
-                        ? maxBatchBufferBytesFromMaxBatchBytes(maxBatchBytes)
+                        ? maxBatchBufferBytesFromMaxBatchBytes(maxBatchBytes, maxBatchBufferBatches)
                         : maxBatchBufferBytes,
                 HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
                 retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
                 shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs,
-                maxBlockOnOverflowMs, maxBatchBufferBatches);
+                maxBlockOnOverflowMs, maxBatchBufferBatches, overflowAppenderRef);
     }
 
-    private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes) {
+    private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes, int maxBatchBufferBatches) {
         var maxBatchBufferBytes0 = 250_000;
-        return Math.toIntExact(Math.min(Integer.MAX_VALUE, maxBatchBytes * 50 + maxBatchBufferBytes0));
+        return Math.toIntExact(Math.min(Integer.MAX_VALUE, maxBatchBytes * maxBatchBufferBatches + maxBatchBufferBytes0));
     }
 
     @Override
     public void append(LogEvent event) {
+        AppenderControl useOverflowAppenderControl = null;
         byte[] eventBytes = getLayout().toByteArray(event);
-        doWithLock(() -> {
+        lock.lock();
+        try {
+            var overflow = false;
             if (currentBatch.isEmpty()) {
                 firstRecordNanos = ticker.nanoTime();
 
@@ -318,16 +338,48 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
 
             if (needsFlushAssumeLocked(eventBytes)) {
-                flushAssumingLocked();
+                overflow = !tryFlushAssumingLocked();
             }
 
-            if (currentBatchBytes == 0) {
-                currentBatchBytes += batchPrefix.length;
-            }
+            if (!overflow) {
+                if (currentBatchBytes == 0) {
+                    currentBatchBytes += batchPrefix.length;
+                }
 
-            currentBatch.add(eventBytes);
-            currentBatchBytes += eventBytes.length;
-        });
+                currentBatch.add(eventBytes);
+                currentBatchBytes += eventBytes.length;
+            } else {
+                if (lockCondition != null) {
+                    var remainingNanos = TimeUnit.MILLISECONDS.toNanos(maxBlockOnOverflowMs);
+                    do {
+                        remainingNanos = lockCondition.awaitNanos(remainingNanos);
+
+                        if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
+                            currentBatch.add(eventBytes);
+                            currentBatchBytes += batchPrefix.length;
+                            currentBatchBytes += eventBytes.length;
+                            overflow = false;
+                            break;
+                        }
+                    } while (remainingNanos > 0);
+                }
+
+                if (overflow) {
+                    // We could forward the event here directly, but it seems slightly preferable to do this after releasing the lock.
+                    useOverflowAppenderControl = overflowAppenderControl;
+                }
+            }
+        } catch (InterruptedException e) {
+            getStatusLogger().warn("Interrupted while waiting for free slot in batch buffer", e);
+            Thread.currentThread().interrupt();
+            return;
+        } finally {
+            lock.unlock();
+        }
+
+        if (useOverflowAppenderControl != null) {
+            useOverflowAppenderControl.callAppender(event);
+        }
     }
 
     private boolean needsFlushAssumeLocked(byte[] eventBytes) {
@@ -357,32 +409,33 @@ public class AsyncHttpAppender extends AbstractAppender {
 
             long elapsed = ticker.nanoTime() - firstRecordNanos;
             if (elapsed > Math.round(lingerNs * 0.95)) {
-                flushAssumingLocked();
+                tryFlushAssumingLocked();
             }
         });
     }
 
-    private void flushAssumingLocked() {
+    private boolean tryFlushAssumingLocked() {
         if (currentBatch.isEmpty()) {
-            return;
+            return true;
         }
 
-        // Implementation note: Creating a batch can be a relatively expensive operation, especially if compression is enabled.
-        // It might therefore be preferable to release the lock before doing so, at least under specific conditions.
-        Batch batch = createBatch(currentBatch);
-        if (batch.effectiveBytes() + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) {
+        var batchSize = calculateBatchSize(currentBatch);
+
+        // Implementation note: The effective batch size might be smaller, or even bigger in exceptional cases if compression is enabled.
+        // However, since creating batches just to throw them away seems wasteful, especially in an overload situation, this inaccuracy seems the lesser evil.
+        if ((batchSize + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) && bufferedBatches.size() < maxBatchBufferBatches) {
+            // Implementation note: Creating a batch can be a relatively expensive operation, especially if compression is enabled.
+            // It might therefore be preferable to release the lock before doing so, at least under specific conditions.
+            Batch batch = createBatch(currentBatch, batchSize);
             currentBufferBytes += batch.effectiveBytes();
             bufferedBatches.addLast(batch);
             runAsyncTracked("drainBufferedBatches", this::drainBufferedBatches, () -> { });
-        } else {
-            batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
-                    new BatchCompletionContext(
-                            this, batch.uncompressedBytes, batch.effectiveBytes(), batch.logEvents, currentBufferBytes, bufferedBatches.size()),
-                    BATCH_DROPPED));
+            currentBatch.clear();
+            currentBatchBytes = 0;
+            return true;
         }
 
-        currentBatch.clear();
-        currentBatchBytes = 0;
+        return false;
     }
 
     private void drainBufferedBatches() {
@@ -417,6 +470,10 @@ public class AsyncHttpAppender extends AbstractAppender {
                                 currentBufferBytes -= releaseBytes;
                                 bufferBytesSnapshot = currentBufferBytes;
                                 bufferedBatchesSnapshot = bufferedBatches.size();
+
+                                if (lockCondition != null) {
+                                    lockCondition.signalAll();
+                                }
                             } finally {
                                 lock.unlock();
                             }
@@ -575,7 +632,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return lingerMs;
     }
 
-    int maxBatchBytes() {
+    public int maxBatchBytes() {
         return maxBatchBytes;
     }
 
@@ -595,7 +652,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return maxConcurrentRequests;
     }
 
-    int maxBatchLogEvents() {
+    public int maxBatchLogEvents() {
         return maxBatchLogEvents;
     }
 
@@ -631,6 +688,10 @@ public class AsyncHttpAppender extends AbstractAppender {
         return shutdownTimeoutMs;
     }
 
+    OverflowAppenderRef overflowAppenderRef() {
+        return overflowAppenderRef;
+    }
+
     public int maxBatchBufferBatches() {
         return maxBatchBufferBatches;
     }
@@ -639,40 +700,43 @@ public class AsyncHttpAppender extends AbstractAppender {
         return batchCompletionListener;
     }
 
-    private Batch createBatch(List<byte[]> events) {
-        byte[] res = EMPTY_BYTE_ARRAY;
-        if (!events.isEmpty()) {
-            int totalSize = batchPrefix.length + batchSuffix.length;
-            totalSize += events.get(0).length;
+    private int calculateBatchSize(List<byte[]> events) {
+        assert !currentBatch.isEmpty();
 
-            for (int i = 1; i < events.size(); i++) {
-                if (isSeparatorNeeded(events.get(i - 1), events.get(i))) {
-                    totalSize += batchSeparator.length;
-                }
+        int batchSize = batchPrefix.length + batchSuffix.length;
+        batchSize += events.get(0).length;
 
-                totalSize += events.get(i).length;
+        for (int i = 1; i < events.size(); i++) {
+            if (isSeparatorNeeded(events.get(i - 1), events.get(i))) {
+                batchSize += batchSeparator.length;
             }
 
-            res = new byte[totalSize];
-            System.arraycopy(batchPrefix, 0, res, 0, batchPrefix.length);
-
-            int i0 = batchPrefix.length;
-            System.arraycopy(events.get(0), 0, res, i0, events.get(0).length);
-            i0 += events.get(0).length;
-
-            for (int i = 1; i < events.size(); i++) {
-                if (isSeparatorNeeded(events.get(i - 1), events.get(i))) {
-                    System.arraycopy(batchSeparator, 0, res, i0, batchSeparator.length);
-                    i0 += batchSeparator.length;
-                }
-
-                byte[] event = events.get(i);
-                System.arraycopy(event, 0, res, i0, event.length);
-                i0 += event.length;
-            }
-
-            System.arraycopy(batchSuffix, 0, res, i0, batchSuffix.length);
+            batchSize += events.get(i).length;
         }
+
+        return batchSize;
+    }
+
+    private Batch createBatch(List<byte[]> events, int batchSize) {
+        byte[] res = new byte[batchSize];
+        System.arraycopy(batchPrefix, 0, res, 0, batchPrefix.length);
+
+        int i0 = batchPrefix.length;
+        System.arraycopy(events.get(0), 0, res, i0, events.get(0).length);
+        i0 += events.get(0).length;
+
+        for (int i = 1; i < events.size(); i++) {
+            if (isSeparatorNeeded(events.get(i - 1), events.get(i))) {
+                System.arraycopy(batchSeparator, 0, res, i0, batchSeparator.length);
+                i0 += batchSeparator.length;
+            }
+
+            byte[] event = events.get(i);
+            System.arraycopy(event, 0, res, i0, event.length);
+            i0 += event.length;
+        }
+
+        System.arraycopy(batchSuffix, 0, res, i0, batchSuffix.length);
 
         var uncompressedBytes = res.length;
         if (contentEncoding == ContentEncoding.GZIP) {
@@ -704,7 +768,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 scheduledFlush = null;
             }
 
-            flushAssumingLocked();
+            tryFlushAssumingLocked();
         });
 
         var stoppedCleanly = true;
@@ -721,6 +785,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             while (remainingNanos > 0 && hasUnpublishedLogData()) {
                 var t0 = ticker.nanoTime();
 
+                doWithLock(this::tryFlushAssumingLocked);
                 CompletableFuture.allOf(currentlyTrackedFutures())
                         .exceptionally(ignore -> null) // <-- we only care about the future terminating at all.
                         .get(remainingNanos, TimeUnit.NANOSECONDS);
@@ -850,8 +915,6 @@ public class AsyncHttpAppender extends AbstractAppender {
                 actualLog.warn(() -> new ParameterizedMessage("Error delivering batch {}: {}", contextString.get(), deliveredError.httpStatus));
             } else if (event.type instanceof BatchDeliveryFailed deliveryFailed) {
                 actualLog.warn(() -> new ParameterizedMessage("Delivery of batch {} failed", contextString.get(), deliveryFailed.exception));
-            } else if (event.type instanceof BatchDropped) {
-                actualLog.warn(() -> new ParameterizedMessage("Dropping batch {} because the HTTP backend is not keeping up", contextString.get()));
             } else if (event.type instanceof BatchDeliveredSuccess deliveredSuccess) {
                 actualLog.info(() -> new ParameterizedMessage("Delivered batch {} with {}", contextString.get(), deliveredSuccess.httpStatus));
             } else {
@@ -862,7 +925,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         if (executor == null || log instanceof StatusLogger) {
             logBatchCompletion.run();
         } else {
-            executor.execute(logBatchCompletion);
+            ForkJoinPool.commonPool().execute(logBatchCompletion);
         }
     }
 }

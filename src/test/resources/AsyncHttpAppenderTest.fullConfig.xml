@@ -24,20 +24,25 @@
         <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
     </Properties>
     <Appenders>
+        <Console name="Console">
+            <PatternLayout pattern="${pattern}"/>
+        </Console>
+
         <AsyncHttp name="AsyncHttp" url="http://y.xz" maxBatchBytes="1234" lingerMs="567" maxBatchLogEvents="78"
                    batchPrefix="start" batchSeparator="sep" batchSuffix="end"
                    ignoreExceptions="false" connectTimeoutMs="888"
                    readTimeoutMs="999" maxConcurrentRequests="17" method="PUT" batchSeparatorInsertionStrategy="always" retries="11"
                    httpSuccessCodes="200,201,202,203" httpRetryCodes="500,502" retryOnIoError="false" contentEncoding="gzip"
-                   httpClientSslConfigSupplier="com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$SslConfigSupplier">
+                   httpClientSslConfigSupplier="com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$SslConfigSupplier"
+                   shutdownTimeoutMs="323" maxBlockOnOverflowMs="456">
+            <OverflowAppenderRef ref="Console">
+                <BurstFilter rate="1" maxBurst="1"/>
+            </OverflowAppenderRef>
             <Property name="Authorization" value="Api-Token secret"/>
             <Property name="Content-Type" value="application/jsonl"/>
             <PatternLayout pattern="${pattern}"/>
         </AsyncHttp>
 
-        <Console name="Console">
-            <PatternLayout pattern="${pattern}"/>
-        </Console>
     </Appenders>
     <Loggers>
         <Root level="info">

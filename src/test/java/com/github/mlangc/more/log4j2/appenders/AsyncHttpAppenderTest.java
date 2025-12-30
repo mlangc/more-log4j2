@@ -22,6 +22,7 @@ package com.github.mlangc.more.log4j2.appenders;
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchSeparatorInsertionStrategy;
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.ContentEncoding;
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.HttpMethod;
+import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.http.Fault;
@@ -44,6 +45,7 @@ import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilder;
 import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
 import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
+import org.apache.logging.log4j.core.filter.BurstFilter;
 import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.apache.logging.log4j.core.lookup.JavaLookup;
 import org.apache.logging.log4j.core.util.Log4jThreadFactory;
@@ -252,7 +254,7 @@ class AsyncHttpAppenderTest {
         }
 
         List<AsyncHttpAppender.BatchCompletionEvent> getLastBatchCompletionEvents() {
-            synchronized(this) {
+            synchronized (this) {
                 return List.copyOf(lastBatchCompletionEvents);
             }
         }
@@ -328,6 +330,15 @@ class AsyncHttpAppenderTest {
             assertThat(appender.httpClientSslConfigSupplier()).isEqualTo("com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$SslConfigSupplier");
             assertThat(appender.httpSuccessCodes()).containsExactly(200, 201, 202, 203);
             assertThat(appender.httpRetryCodes()).containsExactly(500, 502);
+            assertThat(appender.shutdownTimeoutMs()).isEqualTo(323);
+            assertThat(appender.maxBlockOnOverflowMs()).isEqualTo(456);
+
+            assertThat(appender.overflowAppenderRef())
+                    .isNotNull()
+                    .satisfies(appenderRef -> {
+                        assertThat(appenderRef.ref()).isEqualTo("Console");
+                        assertThat(appenderRef.filter()).isInstanceOf(BurstFilter.class);
+                    });
         }
     }
 
@@ -400,6 +411,8 @@ class AsyncHttpAppenderTest {
         int maxBatchLogEvents = 5000;
         int maxBatchBytes = 250_000;
         boolean mustEventuallySucceed = true;
+        int maxBlockOnOverflowMs;
+        boolean mustNotDropLogs;
 
         @Override
         public String toString() {
@@ -467,6 +480,13 @@ class AsyncHttpAppenderTest {
                     t.serverFailureRate = 0.1;
                     t.retries = 10;
                     t.maxBatchLogEvents = 100;
+                }),
+                StressTestCase.tweaked(t -> {
+                    t.medianServerResponseMs = 10;
+                    t.maxBlockOnOverflowMs = 1000;
+                    t.maxBatchLogEvents = 50;
+                    t.mustEventuallySucceed = true;
+                    t.mustNotDropLogs = true;
                 })
         );
     }
@@ -513,23 +533,29 @@ class AsyncHttpAppenderTest {
         String configName = "CStress@" + testCase;
         ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         configBuilder = configBuilder.setConfigurationName(configName)
+                .setStatusLevel(Level.WARN)
+                .add(configBuilder.newAppender("Count", "CountingAppender"))
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("url", url)
                         .addAttribute("lingerMs", testCase.lingerMs)
                         .addAttribute("maxBatchBytes", testCase.maxBatchBytes)
                         .addAttribute("maxBatchLogEvents", testCase.maxBatchLogEvents)
+                        .addAttribute("maxBlockOnOverflowMs", testCase.maxBlockOnOverflowMs)
                         .addAttribute("retries", testCase.retries)
                         .addAttribute("httpClientSslConfigSupplier", AsyncHttpAppenderTest.class.getCanonicalName() + "$" + SslConfigSupplier.class.getSimpleName())
-                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
+                        .addComponent(configBuilder.newComponent("OverflowAppenderRef").addAttribute("ref", "Count").addAttribute("level", "ALL")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
-        assertThat(configBuilder.isValid()).as(configBuilder::toXmlConfiguration).isTrue();
-        Configuration config = configBuilder.build(false);
-
         int logsPerThread = 100_000;
-        LoggerContext context = TestHelpers.loggerContextFromConfig(config);
+        LoggerContext context = TestHelpers.loggerContextFromConfig(configBuilder);
+        TestBatchCompletionListener batchCompletionListener;
+        CountingAppender countingAppender;
         try {
             Logger logger = context.getLogger(getClass());
+            batchCompletionListener = (TestBatchCompletionListener) getAsyncHttpAppender(context).batchCompletionListener();
+            countingAppender = context.getConfiguration().getAppender("Count");
 
             IntFunction<Runnable> logBurstJob = id -> () -> {
                 for (int i = 0; i < logsPerThread; i++) {
@@ -547,6 +573,17 @@ class AsyncHttpAppenderTest {
         } finally {
             assertThat(context.stop(10, TimeUnit.SECONDS)).isTrue();
         }
+
+        assertThat(batchCompletionListener.getLastBatchCompletionEvents())
+                .isNotEmpty()
+                .allSatisfy(evt -> {
+                    assertThat(evt.context().currentBufferedBatches()).isLessThanOrEqualTo(evt.context().source().maxBatchBufferBatches());
+                    assertThat(evt.context().currentBufferBytes()).isLessThanOrEqualTo(evt.context().source().maxBatchBufferBytes());
+                    assertThat(evt.context().bytesEffective()).isLessThanOrEqualTo(evt.context().source().maxBatchBytes());
+                    assertThat(evt.context().bytesUncompressed()).isLessThanOrEqualTo(evt.context().source().maxBatchBytes());
+                    assertThat((long) evt.context().bytesEffective()).isLessThanOrEqualTo(evt.context().bytesUncompressed());
+                    assertThat(evt.context().logEvents()).isLessThanOrEqualTo(evt.context().source().maxBatchLogEvents());
+                });
 
         var receivedLinesPerStatusCode = collectReceivedLinesPerStatusCode(wireMockPath);
         assertThat(receivedLinesPerStatusCode.get(200))
@@ -585,15 +622,21 @@ class AsyncHttpAppenderTest {
                     firstMissingLogLinePerThread, numMissingLogLinesPerThread, postedLinesTotal);
         };
 
+        var droppedLogsTotal = Math.toIntExact(countingAppender.currentCount());
+        if (testCase.mustNotDropLogs) {
+            assertThat(droppedLogsTotal).isZero();
+        }
+
+        var expectedLinesTotal = logsPerThread * testCase.parallelism - droppedLogsTotal;
         assertThat(postedLinesTotal)
                 .as(postedLogLinesString)
-                .hasSize(logsPerThread * testCase.parallelism)
+                .hasSize(expectedLinesTotal)
                 .allSatisfy((line, ignore) -> assertThat(line).matches(logLineRegex));
 
         if (testCase.mustEventuallySucceed) {
             assertThat(receivedLinesPerStatusCode.get(200))
                     .allSatisfy((k, v) -> assertThat(v).isOne())
-                    .hasSize(logsPerThread * testCase.parallelism);
+                    .hasSize(expectedLinesTotal);
         }
     }
 
@@ -1090,34 +1133,31 @@ class AsyncHttpAppenderTest {
 
         var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         configBuilder = configBuilder
+                .add(configBuilder.newAppender("Count", "CountingAppender"))
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("url", wireMockHttpUrl)
                         .addAttribute("maxBlockOnOverflowMs", Integer.MAX_VALUE)
                         .addAttribute("maxBatchBufferBytes", 1000)
                         .addAttribute("maxBatchLogEvents", 1)
                         .addAttribute("maxConcurrentRequests", 1)
-                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
-                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
+                        .addComponent(configBuilder.newComponent("OverflowAppenderRef").addAttribute("ref", "Count")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
-        assertThat(configBuilder.isValid()).as(configBuilder::toXmlConfiguration).isTrue();
-        var config = configBuilder.build(false);
         var longStr = "x".repeat(100);
         var logLines = 100;
 
-        TestBatchCompletionListener completionListener;
-        try (var context = TestHelpers.loggerContextFromConfig(config)) {
+        CountingAppender countingAppender;
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
             var log = context.getLogger(getClass());
-            completionListener = (TestBatchCompletionListener) getAsyncHttpAppender(context).batchCompletionListener();
+            countingAppender = context.getConfiguration().getAppender("Count");
 
             for (int i = 0; i < logLines; i++) {
                 log.info("{} - {}", longStr, i);
             }
         }
 
-        assertThat(completionListener.getLastBatchCompletionEvents())
-                .noneMatch(e -> e.type() instanceof AsyncHttpAppender.BatchDropped);
-
+        assertThat(countingAppender.currentCount()).isZero();
         wireMockExt.verify(logLines, postRequestedFor(urlEqualTo(wireMockPath)));
     }
 
@@ -1175,7 +1215,7 @@ class AsyncHttpAppenderTest {
 
         final var numLongMessages = 3;
         String longMessage;
-        TestBatchCompletionListener testBatchCompletionListener;
+        CountingAppender overflowAppender;
         try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.withSmallBatchAndBatchBufferSize.xml")) {
             var batchBufferBytes = ((AsyncHttpAppender) context.getConfiguration().getAppender("AsyncHttp")).maxBatchBufferBytes();
             var log = context.getLogger(getClass());
@@ -1185,13 +1225,10 @@ class AsyncHttpAppenderTest {
                 log.info(longMessage);
             }
 
-            testBatchCompletionListener = (TestBatchCompletionListener) getAsyncHttpAppender(context).batchCompletionListener();
+            overflowAppender = context.getConfiguration().getAppender("Count");
         }
 
-        var batchesDropped = testBatchCompletionListener.getLastBatchCompletionEvents().stream()
-                .filter(evt -> evt.type() instanceof AsyncHttpAppender.BatchDropped)
-                .count();
-
+        var batchesDropped = overflowAppender.currentCount();
         assertThat(batchesDropped).isPositive();
         wireMockExt.verify(Math.toIntExact(numLongMessages - batchesDropped), postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo(longMessage)));
     }
@@ -1280,6 +1317,7 @@ class AsyncHttpAppenderTest {
         configBuilder = configBuilder
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("maxBlockOnOverflowMs", Integer.MAX_VALUE)
                         .addAttribute("maxBatchBufferBatches", maxBatchBufferBatches)
                         .addAttribute("maxBatchLogEvents", 1)
                         .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
@@ -1308,8 +1346,7 @@ class AsyncHttpAppenderTest {
                             .isEqualTo(maxBatchBufferBatches);
 
                     assertThat(evt.context().currentBufferedBatches())
-                            .isLessThan(maxBatchBufferBatches);
-
+                            .isLessThanOrEqualTo(maxBatchBufferBatches);
                 });
     }
 
