@@ -34,6 +34,7 @@ import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
+import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Logger;
@@ -485,6 +486,13 @@ class AsyncHttpAppenderTest {
                     t.medianServerResponseMs = 10;
                     t.maxBlockOnOverflowMs = 1000;
                     t.maxBatchLogEvents = 50;
+                    t.mustEventuallySucceed = true;
+                    t.mustNotDropLogs = true;
+                }),
+                StressTestCase.tweaked(t -> {
+                    t.medianServerResponseMs = 10;
+                    t.maxBlockOnOverflowMs = 2000;
+                    t.maxBatchLogEvents = 100;
                     t.mustEventuallySucceed = true;
                     t.mustNotDropLogs = true;
                 })
@@ -1521,6 +1529,41 @@ class AsyncHttpAppenderTest {
                 .toArray();
 
         assertThat(elapsedMillis).isSorted();
+    }
+
+    @Test
+    void shouldDropLogsIfOverloadedAndAggressiveBlockMs() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("Count", "CountingAppender"))
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("maxBlockOnOverflowMs", 1)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
+                        .addComponent(configBuilder.newComponent("OverflowAppenderRef").addAttribute("ref", "Count")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        CountingAppender countingAppender;
+        var logEvents = new MutableLong();
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            countingAppender = TestHelpers.findAppender(context, CountingAppender.class);
+            var log = context.getLogger(getClass());
+
+            Runnable logTillDropped = () -> {
+                while (countingAppender.currentCount() == 0) {
+                    log.info("not yet dropped");
+                    logEvents.increment();
+                }
+            };
+
+            assertThat(CompletableFuture.runAsync(logTillDropped)).succeedsWithin(5, TimeUnit.SECONDS);
+        }
+
+        var expectedRequests = Math.toIntExact(logEvents.longValue() - countingAppender.currentCount());
+        wireMockExt.verify(expectedRequests, postRequestedFor(urlEqualTo(wireMockPath)));
     }
 
     static AsyncHttpAppender getAsyncHttpAppender(LoggerContext context) {
