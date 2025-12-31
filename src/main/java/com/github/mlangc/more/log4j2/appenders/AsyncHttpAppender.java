@@ -125,10 +125,10 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public record BatchDeliveryFailed(Exception exception, int tries) implements BatchCompletionType { }
 
-    public record BatchCompletionContext(AsyncHttpAppender source, long bytesUncompressed, int bytesEffective, int logEvents, long currentBufferBytes,
-                                         int currentBufferedBatches) { }
+    public record BatchCompletionStats(long batchBytesUncompressed, int batchBytesEffective, int batchLogEvents, long bufferedBatchBytes,
+                                       int bufferedBatches) { }
 
-    public record BatchCompletionEvent(BatchCompletionContext context, BatchCompletionType type) { }
+    public record BatchCompletionEvent(AsyncHttpAppender source, BatchCompletionStats stats, BatchCompletionType type) { }
 
     public interface BatchCompletionListener {
         void onBatchCompletionEvent(BatchCompletionEvent completionEvent);
@@ -491,7 +491,8 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                             if (completionType != null) {
                                 batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
-                                        new BatchCompletionContext(this, uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot),
+                                        this,
+                                        new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot),
                                         completionType));
                             }
                         });
@@ -897,7 +898,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public static void logBatchCompletionEvent(Logger log, Executor executor, BatchCompletionEvent event) {
         Logger actualLog;
-        if (!(log instanceof StatusLogger) && !event.context.source.isStarted()) {
+        if (!(log instanceof StatusLogger) && !event.source.isStarted()) {
             actualLog = StatusLogger.getLogger();
         } else {
             actualLog = log;
@@ -905,10 +906,10 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         Runnable logBatchCompletion = () -> {
             Supplier<String> contextString = () -> {
-                double compressionRate = (double) event.context.bytesUncompressed / event.context.bytesEffective;
-                return event.context + " (compressionRate=" + compressionRate +
-                       ", maxBatchBufferBytes=" + event.context.source.maxBatchBufferBytes +
-                       ", maxBatchBufferBatches=" + event.context.source.maxBatchBufferBatches + ")";
+                double compressionRate = (double) event.stats.batchBytesUncompressed / event.stats.batchBytesEffective;
+                return event.stats + " (compressionRate=" + compressionRate +
+                       ", maxBatchBufferBytes=" + event.source.maxBatchBufferBytes +
+                       ", maxBatchBufferBatches=" + event.source.maxBatchBufferBatches + ")";
             };
 
             if (event.type instanceof BatchDeliveredError deliveredError) {
@@ -925,7 +926,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         if (executor == null || log instanceof StatusLogger) {
             logBatchCompletion.run();
         } else {
-            ForkJoinPool.commonPool().execute(logBatchCompletion);
+            executor.execute(logBatchCompletion);
         }
     }
 }

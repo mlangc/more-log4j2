@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,6 +20,7 @@
 package com.github.mlangc.more.log4j2.benchmarks;
 
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender;
+import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.MappingBuilder;
@@ -57,7 +58,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
             @Override
             int parallelism() {
-                return 1;
+                return 4;
             }
         }.run();
     }
@@ -98,6 +99,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
             try (var context = TestHelpers.loggerContextFromTestResource(log4jConfigLocation())) {
                 var log = context.getLogger(getClass());
+                var overflowCountingAppender = TestHelpers.findAppender(context, CountingAppender.class);
 
                 var batchCompletionListener = (BatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
                 batchCompletionListener.log = log;
@@ -121,8 +123,9 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                         var avg0 = avgLogEventsPerSec.doubleValue();
                         avgLogEventsPerSec.setValue(0.9 * avg0 + 0.1 * newLinesLogged);
 
-                        if (Math.abs(avg0 / avgLogEventsPerSec.doubleValue() - 1.0) < 1e-3) {
-                            out.printf("Found steady state at %s logs per second%n", avgLogEventsPerSec.doubleValue());
+                        if (Math.abs(avg0 / avgLogEventsPerSec.doubleValue() - 1.0) < 5e-4) {
+                            out.printf("Found steady state at %s logs per second (droppedLogEvents=%s)%n",
+                                    avgLogEventsPerSec.doubleValue(), overflowCountingAppender.currentCount());
                             out.printf("Stopping benchmark%n");
 
                             checkAndUpdateStatsScheduleHolder.getValue().cancel(false);
@@ -132,7 +135,9 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                         }
                     }
 
-                    out.printf("avgLogsPerSecond=%s%n", avgLogEventsPerSec);
+                    var droppedLogEvents = overflowCountingAppender.currentCount();
+                    out.printf("avgLogsPerSecond=%s, droppedLogEvents=%s%n", avgLogEventsPerSec, droppedLogEvents);
+                    ForkJoinPool.commonPool().execute(() -> log.info("avgLogsPerSecond={}, droppedLogEvents={}", avgLogEventsPerSec, droppedLogEvents));
 
                     lastLinesLogged.setValue(currentLinesLogged);
                 };

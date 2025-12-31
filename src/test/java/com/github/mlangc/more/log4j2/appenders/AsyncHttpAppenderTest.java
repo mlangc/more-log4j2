@@ -577,12 +577,12 @@ class AsyncHttpAppenderTest {
         assertThat(batchCompletionListener.getLastBatchCompletionEvents())
                 .isNotEmpty()
                 .allSatisfy(evt -> {
-                    assertThat(evt.context().currentBufferedBatches()).isLessThanOrEqualTo(evt.context().source().maxBatchBufferBatches());
-                    assertThat(evt.context().currentBufferBytes()).isLessThanOrEqualTo(evt.context().source().maxBatchBufferBytes());
-                    assertThat(evt.context().bytesEffective()).isLessThanOrEqualTo(evt.context().source().maxBatchBytes());
-                    assertThat(evt.context().bytesUncompressed()).isLessThanOrEqualTo(evt.context().source().maxBatchBytes());
-                    assertThat((long) evt.context().bytesEffective()).isLessThanOrEqualTo(evt.context().bytesUncompressed());
-                    assertThat(evt.context().logEvents()).isLessThanOrEqualTo(evt.context().source().maxBatchLogEvents());
+                    assertThat(evt.stats().bufferedBatches()).isLessThanOrEqualTo(evt.source().maxBatchBufferBatches());
+                    assertThat(evt.stats().bufferedBatchBytes()).isLessThanOrEqualTo(evt.source().maxBatchBufferBytes());
+                    assertThat(evt.stats().batchBytesEffective()).isLessThanOrEqualTo(evt.source().maxBatchBytes());
+                    assertThat(evt.stats().batchBytesUncompressed()).isLessThanOrEqualTo(evt.source().maxBatchBytes());
+                    assertThat((long) evt.stats().batchBytesEffective()).isLessThanOrEqualTo(evt.stats().batchBytesUncompressed());
+                    assertThat(evt.stats().batchLogEvents()).isLessThanOrEqualTo(evt.source().maxBatchLogEvents());
                 });
 
         var receivedLinesPerStatusCode = collectReceivedLinesPerStatusCode(wireMockPath);
@@ -1269,12 +1269,12 @@ class AsyncHttpAppenderTest {
                                 assertThat(deliveredSuccess.httpStatus().code()).isEqualTo(200);
                                 assertThat(deliveredSuccess.tries()).isOne();
 
-                                assertThat(evt.context().bytesUncompressed())
+                                assertThat(evt.stats().batchBytesUncompressed())
                                         .isEqualTo(longMessage.length())
-                                        .isGreaterThan(evt.context().bytesEffective());
+                                        .isGreaterThan(evt.stats().batchBytesEffective());
 
-                                assertThat(evt.context().logEvents()).isOne();
-                                assertThat(evt.context().currentBufferedBatches()).isZero();
+                                assertThat(evt.stats().batchLogEvents()).isOne();
+                                assertThat(evt.stats().bufferedBatches()).isZero();
                             });
                         });
             });
@@ -1297,7 +1297,7 @@ class AsyncHttpAppenderTest {
             Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
                 assertThat(batchCompletionListener.getLastBatchCompletionEvents())
                         .hasSize(3)
-                        .allSatisfy(evt -> assertThat(evt.context().source()).isSameAs(appender))
+                        .allSatisfy(evt -> assertThat(evt.source()).isSameAs(appender))
                         .last().satisfies(evt -> {
                             assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredError.class, deliveredError -> {
                                 assertThat(deliveredError.httpStatus().code()).isEqualTo(400);
@@ -1342,10 +1342,10 @@ class AsyncHttpAppenderTest {
         assertThat(completionListener.getLastBatchCompletionEvents())
                 .hasSize(numLogLines)
                 .allSatisfy(evt -> {
-                    assertThat(evt.context().source().maxBatchBufferBatches())
+                    assertThat(evt.source().maxBatchBufferBatches())
                             .isEqualTo(maxBatchBufferBatches);
 
-                    assertThat(evt.context().currentBufferedBatches())
+                    assertThat(evt.stats().bufferedBatches())
                             .isLessThanOrEqualTo(maxBatchBufferBatches);
                 });
     }
