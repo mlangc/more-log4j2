@@ -19,13 +19,4 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-class HttpRequestFailedException extends HttpRetryManagerException {
-    HttpRequestFailedException(RetryStats stats, Throwable cause) {
-        super(stats, cause);
-    }
-
-    @Override
-    public String getMessage() {
-        return "Unexpected error with " + stats() + ": " + getCause();
-    }
-}
+record RetryStats(int tries, long requestNanos, long backoffNanos, long totalNanos) { }

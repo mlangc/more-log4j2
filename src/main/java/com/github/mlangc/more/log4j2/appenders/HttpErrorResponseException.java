@@ -22,8 +22,8 @@ package com.github.mlangc.more.log4j2.appenders;
 class HttpErrorResponseException extends HttpRetryManagerException {
     private final HttpStatus httpStatus;
 
-    HttpErrorResponseException(int tries, HttpStatus httpStatus) {
-        super(tries, null);
+    HttpErrorResponseException(HttpStatus httpStatus, RetryStats stats) {
+        super(stats, null);
         this.httpStatus = httpStatus;
     }
 
@@ -33,6 +33,6 @@ class HttpErrorResponseException extends HttpRetryManagerException {
 
     @Override
     public String getMessage() {
-        return "Unexpected http status after " + tries() + " tries: " + httpStatus;
+        return "Unexpected http status with " + stats() + ": " + httpStatus;
     }
 }

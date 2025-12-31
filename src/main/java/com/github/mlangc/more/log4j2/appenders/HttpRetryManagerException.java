@@ -20,14 +20,14 @@
 package com.github.mlangc.more.log4j2.appenders;
 
 abstract class HttpRetryManagerException extends RuntimeException {
-    private final int tries;
+    private final RetryStats stats;
 
-    HttpRetryManagerException(int tries, Throwable cause) {
+    HttpRetryManagerException(RetryStats stats, Throwable cause) {
         super(cause);
-        this.tries = tries;
+        this.stats = stats;
     }
 
-    public int tries() {
-        return tries;
+    RetryStats stats() {
+        return stats;
     }
 }

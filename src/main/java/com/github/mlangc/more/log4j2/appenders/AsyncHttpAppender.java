@@ -19,7 +19,7 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.HttpStatusWithTries;
+import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.HttpStatusAndStats;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
@@ -119,14 +119,14 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public sealed interface BatchCompletionType { }
 
-    public record BatchDeliveredSuccess(HttpStatus httpStatus, int tries) implements BatchCompletionType { }
+    public record BatchDeliveredSuccess(HttpStatus httpStatus) implements BatchCompletionType { }
 
-    public record BatchDeliveredError(HttpStatus httpStatus, int tries) implements BatchCompletionType { }
+    public record BatchDeliveredError(HttpStatus httpStatus) implements BatchCompletionType { }
 
-    public record BatchDeliveryFailed(Exception exception, int tries) implements BatchCompletionType { }
+    public record BatchDeliveryFailed(Exception exception) implements BatchCompletionType { }
 
     public record BatchCompletionStats(long batchBytesUncompressed, int batchBytesEffective, int batchLogEvents, long bufferedBatchBytes,
-                                       int bufferedBatches) { }
+                                       int bufferedBatches, int tries, long backoffNanos, long requestNanos, long totalNanos) { }
 
     public record BatchCompletionEvent(AsyncHttpAppender source, BatchCompletionStats stats, BatchCompletionType type) { }
 
@@ -459,7 +459,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                 runAsyncTracked(
                         "sendBatchBytes",
-                        (Supplier<CompletableFuture<HttpStatusWithTries>>) () -> retryManager.run(() -> sendBatch(oldestBatch)),
+                        (Supplier<CompletableFuture<HttpStatusAndStats>>) () -> retryManager.run(() -> sendBatch(oldestBatch)),
                         (response, throwable) -> {
                             allowedInFlight.release();
 
@@ -479,20 +479,26 @@ public class AsyncHttpAppender extends AbstractAppender {
                             }
 
                             BatchCompletionType completionType = null;
+                            RetryStats retryStats = null;
                             if (response != null) {
-                                completionType = new BatchDeliveredSuccess(response.status(), response.tries());
+                                completionType = new BatchDeliveredSuccess(response.status());
+                                retryStats = response.stats();
                             } else if (throwable instanceof HttpErrorResponseException errorResponseException) {
-                                completionType = new BatchDeliveredError(errorResponseException.httpStatus(), errorResponseException.tries());
+                                completionType = new BatchDeliveredError(errorResponseException.httpStatus());
+                                retryStats = errorResponseException.stats();
                             } else if (throwable instanceof HttpRetryManagerException retryManagerException) {
-                                completionType = new BatchDeliveryFailed(retryManagerException, retryManagerException.tries());
+                                completionType = new BatchDeliveryFailed(retryManagerException);
+                                retryStats = retryManagerException.stats();
                             } else if (throwable instanceof Exception exception) {
-                                completionType = new BatchDeliveryFailed(exception, -1);
+                                completionType = new BatchDeliveryFailed(exception);
+                                retryStats = new RetryStats(-1, -1, -1, -1);
                             }
 
                             if (completionType != null) {
                                 batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
                                         this,
-                                        new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot),
+                                        new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot,
+                                                retryStats.tries(), retryStats.backoffNanos(), retryStats.requestNanos(), retryStats.totalNanos()),
                                         completionType));
                             }
                         });
@@ -774,7 +780,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         var stoppedCleanly = true;
         try {
-            var waitBeforeDisablingRetriesMillis = timeUnit.toMillis(timeout) - Math.round(retryManager.config.maxDelayMillis() * 1.1);
+            var waitBeforeDisablingRetriesMillis = timeUnit.toMillis(timeout) - Math.round(retryManager.config.maxBackoffMillis() * 1.1);
 
             if (waitBeforeDisablingRetriesMillis <= 0) {
                 retryManager.disableRetries();

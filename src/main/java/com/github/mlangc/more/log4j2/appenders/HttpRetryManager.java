@@ -19,6 +19,8 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
+import org.apache.logging.log4j.core.util.NanoClock;
+
 import java.util.concurrent.*;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
@@ -29,8 +31,9 @@ import static java.util.Objects.requireNonNull;
 class HttpRetryManager {
     final Config config;
 
+    private final NanoClock nanoClock = System::nanoTime;
     private final ScheduledExecutorService executor;
-    private final long startDelayNanos;
+    private final long startMaxBackoffNanos;
     private final long maxDelayNanos;
     private volatile boolean retriesDisabled;
 
@@ -38,18 +41,19 @@ class HttpRetryManager {
         this.config = config;
         this.executor = executor;
 
-        this.maxDelayNanos = TimeUnit.MILLISECONDS.toNanos(config.maxDelayMillis);
-        this.startDelayNanos = Math.max(1, maxDelayNanos / 15);
+        this.maxDelayNanos = TimeUnit.MILLISECONDS.toNanos(config.maxBackoffMillis);
+        this.startMaxBackoffNanos = Math.max(1, maxDelayNanos / 15);
     }
 
-    record Config(int maxRetries, int maxDelayMillis, IntPredicate statusCodeSuccessPredicate, Predicate<Exception> exceptionRetryPredicate, IntPredicate statusCodeRetryPredicate) {
+    record Config(int maxRetries, int maxBackoffMillis, IntPredicate statusCodeSuccessPredicate, Predicate<Exception> exceptionRetryPredicate,
+                  IntPredicate statusCodeRetryPredicate) {
         Config {
             if (maxRetries < 0) {
                 throw new IllegalArgumentException("maxRetries=" + maxRetries);
             }
 
-            if (maxDelayMillis < 1) {
-                throw new IllegalArgumentException("maxDelayMillis=" + maxDelayMillis);
+            if (maxBackoffMillis < 1) {
+                throw new IllegalArgumentException("maxBackoffMillis=" + maxBackoffMillis);
             }
 
             requireNonNull(statusCodeSuccessPredicate);
@@ -58,34 +62,44 @@ class HttpRetryManager {
         }
     }
 
-    CompletableFuture<HttpStatusWithTries> run(Supplier<CompletableFuture<HttpStatus>> op) {
-        return run0(op, 1, startDelayNanos);
+    CompletableFuture<HttpStatusAndStats> run(Supplier<CompletableFuture<HttpStatus>> op) {
+        return run0(op, 1, startMaxBackoffNanos, nanoClock.nanoTime(), 0, 0);
     }
 
     void disableRetries() {
         retriesDisabled = true;
     }
 
-    private CompletableFuture<HttpStatusWithTries> run0(Supplier<CompletableFuture<HttpStatus>> op, int tries, long delayNanos) {
-        CompletableFuture<HttpStatusWithTries> outerFuture = new CompletableFuture<>();
+    private CompletableFuture<HttpStatusAndStats> run0(
+            Supplier<CompletableFuture<HttpStatus>> op, int tries, long currentMaxBackoffNanos,
+            long startNanos, long accumulatedRequestNanos, long accumulatedBackoffNanos) {
+        CompletableFuture<HttpStatusAndStats> outerFuture = new CompletableFuture<>();
 
+
+        var nanos0 = tries == 0 ? startNanos : nanoClock.nanoTime();
         op.get().whenComplete((r, e) -> {
-            CompletableFuture<HttpStatusWithTries> innerFuture;
+            var newAccumulatedRequestNanos = accumulatedRequestNanos + nanoClock.nanoTime() - nanos0;
+
+            CompletableFuture<HttpStatusAndStats> innerFuture;
+
+            Supplier<RetryStats> retryStats = () ->
+                    new RetryStats(tries, newAccumulatedRequestNanos, accumulatedBackoffNanos, nanoClock.nanoTime() - startNanos);
+
             if (e != null) {
                 e = unpackCompletionException(e);
 
                 if (tries > config.maxRetries || !(e instanceof Exception) || !config.exceptionRetryPredicate.test((Exception) e) || retriesDisabled) {
-                    innerFuture = CompletableFuture.failedFuture(new HttpRequestFailedException(tries, e));
+                    innerFuture = CompletableFuture.failedFuture(new HttpRequestFailedException(retryStats.get(), e));
                 } else {
-                    innerFuture = scheduleRetry(op, tries, delayNanos);
+                    innerFuture = scheduleRetry(op, tries, currentMaxBackoffNanos, startNanos, newAccumulatedRequestNanos, accumulatedBackoffNanos);
                 }
             } else {
                 if (config.statusCodeSuccessPredicate.test(r.code())) {
-                    innerFuture = CompletableFuture.completedFuture(new HttpStatusWithTries(r, tries));
+                    innerFuture = CompletableFuture.completedFuture(new HttpStatusAndStats(r, retryStats.get()));
                 } else if (tries > config.maxRetries || !config.statusCodeRetryPredicate.test(r.code()) || retriesDisabled) {
-                    innerFuture = CompletableFuture.failedFuture(new HttpErrorResponseException(tries, r));
+                    innerFuture = CompletableFuture.failedFuture(new HttpErrorResponseException(r, retryStats.get()));
                 } else {
-                    innerFuture = scheduleRetry(op, tries, delayNanos);
+                    innerFuture = scheduleRetry(op, tries, currentMaxBackoffNanos, startNanos, newAccumulatedRequestNanos, accumulatedBackoffNanos);
                 }
             }
 
@@ -101,17 +115,20 @@ class HttpRetryManager {
         return outerFuture;
     }
 
-    private CompletableFuture<HttpStatusWithTries> scheduleRetry(Supplier<CompletableFuture<HttpStatus>> op, int tries, long delayNanos) {
-        var res = new CompletableFuture<HttpStatusWithTries>();
+    private CompletableFuture<HttpStatusAndStats> scheduleRetry(Supplier<CompletableFuture<HttpStatus>> op, int tries,
+                                                                long currentMaxBackoffNanos, long startNanos, long accumulatedRequestNanos, long accumulatedBackoffNanos) {
+        var res = new CompletableFuture<HttpStatusAndStats>();
+        long backoffNanos = ThreadLocalRandom.current().nextLong(currentMaxBackoffNanos);
         executor.schedule(() -> {
-            run0(op, tries + 1, Math.min(maxDelayNanos, delayNanos * 2)).whenComplete((rr, e) -> {
-                if (e == null) {
-                    res.complete(rr);
-                } else {
-                    res.completeExceptionally(e);
-                }
-            });
-        }, ThreadLocalRandom.current().nextLong(delayNanos), TimeUnit.NANOSECONDS);
+            run0(op, tries + 1, Math.min(maxDelayNanos, currentMaxBackoffNanos * 2), startNanos, accumulatedRequestNanos, accumulatedBackoffNanos + backoffNanos)
+                    .whenComplete((rr, e) -> {
+                        if (e == null) {
+                            res.complete(rr);
+                        } else {
+                            res.completeExceptionally(e);
+                        }
+                    });
+        }, backoffNanos, TimeUnit.NANOSECONDS);
         return res;
     }
 
@@ -125,5 +142,5 @@ class HttpRetryManager {
         return throwable;
     }
 
-    record HttpStatusWithTries(HttpStatus status, int tries) { }
+    record HttpStatusAndStats(HttpStatus status, RetryStats stats) { }
 }

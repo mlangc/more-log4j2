@@ -50,10 +50,9 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         System.setProperty("benchmarkLog4jPattern", "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n");
 
         new BenchmarkTemplate() {
-
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceVanilla.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
             }
 
             @Override
