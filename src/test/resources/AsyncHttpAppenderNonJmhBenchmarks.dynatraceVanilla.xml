@@ -24,9 +24,15 @@
         <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
     </Properties>
     <Appenders>
+        <CountingAppender name="Count"/>
+
         <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
-                   httpSuccessCodes="200,204" httpRetryCodes="429,503">
+                   httpSuccessCodes="200,204" httpRetryCodes="429,503"
+                   shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000">
+
+            <OverflowAppenderRef ref="Count"/>
+
             <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
             <Property name="Content-Type" value="application/jsonl"/>
             <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">

@@ -24,10 +24,16 @@
         <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
     </Properties>
     <Appenders>
+        <CountingAppender name="Count"/>
+
         <AsyncHttp name="AsyncHttp" url="https://http-intake.logs.datadoghq.eu/api/v2/logs"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
                    batchPrefix="[" batchSeparator="," batchSuffix="]" maxBatchBytes="4500000" contentEncoding="gzip"
-                   httpSuccessCodes="202" httpRetryCodes="408,429,500,503">
+                   httpSuccessCodes="202" httpRetryCodes="408,429,500,503"
+                   shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000">
+
+            <OverflowAppenderRef ref="Count"/>
+
             <Property name="DD-API-KEY" value="${env:DATADOG_API_KEY}"/>
             <Property name="Content-Type" value="application/json"/>
             <JsonTemplateLayout eventTemplateUri="classpath:DatadogLogMessageJsonLayout.json">

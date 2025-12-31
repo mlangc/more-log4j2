@@ -24,11 +24,17 @@
         <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
     </Properties>
     <Appenders>
+        <CountingAppender name="Count"/>
+
         <AsyncHttp name="Grafana" url="https://logs-prod-012.grafana.net/loki/api/v1/push"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
                    batchPrefix='{"streams": [' batchSeparator="," batchSuffix="]}"
                    maxBatchLogEvents="5000" maxBatchBytes="1000000"
-                   contentEncoding="gzip">
+                   contentEncoding="gzip"
+                   shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000">
+
+            <OverflowAppenderRef ref="Count"/>
+
             <Property name="Content-Type" value="application/json"/>
             <Property name="Authorization" value="Basic ${env:GRAFANA_LOKI_TOKEN}"/>
             <JsonTemplateLayout eventTemplateUri="classpath:GrafanaLokiV1PushLogSingleMessageJsonLayout.json"/>

@@ -53,7 +53,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceVanilla.xml";
             }
 
             @Override
