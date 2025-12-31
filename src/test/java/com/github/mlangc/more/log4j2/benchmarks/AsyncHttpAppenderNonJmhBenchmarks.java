@@ -30,6 +30,8 @@ import org.apache.commons.lang3.mutable.MutableDouble;
 import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.MarkerManager;
 import org.apache.logging.log4j.status.StatusLogger;
 
 import java.util.concurrent.*;
@@ -43,6 +45,8 @@ import static java.lang.System.out;
 
 
 public class AsyncHttpAppenderNonJmhBenchmarks {
+    static final Marker BENCHMARK_SFM_MARKER = MarkerManager.getMarker("BenchmarkSfm");
+
     private static final ScheduledExecutorService SCHEDULED_EXECUTOR_SERVICE = Executors.newSingleThreadScheduledExecutor(
             new ThreadFactoryBuilder().setDaemon(true).setNameFormat(AsyncHttpAppenderNonJmhBenchmarks.class.getSimpleName() + ":%d").build());
 
@@ -52,7 +56,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         new BenchmarkTemplate() {
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.datadogOptimized.xml";
             }
 
             @Override
@@ -63,11 +67,12 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
     }
 
     public static class BatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+
         volatile Logger log = StatusLogger.getLogger();
 
         @Override
         public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent event) {
-            AsyncHttpAppender.logBatchCompletionEvent(log, ForkJoinPool.commonPool(), event);
+            AsyncHttpAppender.logBatchCompletionEvent(log, BENCHMARK_SFM_MARKER, event, ForkJoinPool.commonPool());
         }
     }
 
@@ -100,7 +105,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                 var log = context.getLogger(getClass());
                 var overflowCountingAppender = TestHelpers.findAppender(context, CountingAppender.class);
 
-                var batchCompletionListener = (BatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+                var batchCompletionListener = (BatchCompletionListener) context.getConfiguration().<AsyncHttpAppender>getAppender("AsyncHttp").batchCompletionListener();
                 batchCompletionListener.log = log;
 
                 Runnable logTillStopped = () -> {
@@ -136,7 +141,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
                     var droppedLogEvents = overflowCountingAppender.currentCount();
                     out.printf("avgLogsPerSecond=%s, droppedLogEvents=%s%n", avgLogEventsPerSec, droppedLogEvents);
-                    ForkJoinPool.commonPool().execute(() -> log.info("avgLogsPerSecond={}, droppedLogEvents={}", avgLogEventsPerSec, droppedLogEvents));
+                    ForkJoinPool.commonPool().execute(() ->
+                            log.info(BENCHMARK_SFM_MARKER, "avgLogsPerSecond={}, droppedLogEvents={}", avgLogEventsPerSec, droppedLogEvents));
 
                     lastLinesLogged.setValue(currentLinesLogged);
                 };

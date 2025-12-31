@@ -21,6 +21,7 @@ package com.github.mlangc.more.log4j2.appenders;
 
 import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.HttpStatusAndStats;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Layout;
@@ -899,10 +900,10 @@ public class AsyncHttpAppender extends AbstractAppender {
     }
 
     private static void defaultOnBatchCompletionEventListener(BatchCompletionEvent event) {
-        logBatchCompletionEvent(getStatusLogger(), null, event);
+        logBatchCompletionEvent(getStatusLogger(), null, event, null);
     }
 
-    public static void logBatchCompletionEvent(Logger log, Executor executor, BatchCompletionEvent event) {
+    public static void logBatchCompletionEvent(Logger log, Marker marker, BatchCompletionEvent event, Executor executor) {
         Logger actualLog;
         if (!(log instanceof StatusLogger) && !event.source.isStarted()) {
             actualLog = StatusLogger.getLogger();
@@ -919,13 +920,13 @@ public class AsyncHttpAppender extends AbstractAppender {
             };
 
             if (event.type instanceof BatchDeliveredError deliveredError) {
-                actualLog.warn(() -> new ParameterizedMessage("Error delivering batch {}: {}", contextString.get(), deliveredError.httpStatus));
+                actualLog.warn(marker, () -> new ParameterizedMessage("Error delivering batch {}: {}", contextString.get(), deliveredError.httpStatus));
             } else if (event.type instanceof BatchDeliveryFailed deliveryFailed) {
-                actualLog.warn(() -> new ParameterizedMessage("Delivery of batch {} failed", contextString.get(), deliveryFailed.exception));
+                actualLog.warn(marker, () -> new ParameterizedMessage("Delivery of batch {} failed", contextString.get(), deliveryFailed.exception));
             } else if (event.type instanceof BatchDeliveredSuccess deliveredSuccess) {
-                actualLog.info(() -> new ParameterizedMessage("Delivered batch {} with {}", contextString.get(), deliveredSuccess.httpStatus));
+                actualLog.info(marker, () -> new ParameterizedMessage("Delivered batch {} with {}", contextString.get(), deliveredSuccess.httpStatus));
             } else {
-                actualLog.error(() -> new ParameterizedMessage("Received event {} with unknown type: {}", contextString.get(), event.type));
+                actualLog.error(marker, () -> new ParameterizedMessage("Received event {} with unknown type: {}", contextString.get(), event.type));
             }
         };
 

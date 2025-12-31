@@ -26,7 +26,7 @@
     <Appenders>
         <CountingAppender name="Count"/>
 
-        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
+        <AsyncHttp name="AsyncHttp" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
                    httpSuccessCodes="200,204" httpRetryCodes="429,503"
                    shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000">
@@ -42,7 +42,7 @@
                         value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
 
                 <EventTemplateAdditionalField key="env" value="perf_test"/>
-                <EventTemplateAdditionalField key="source" value="AsyncHttpAppender.perf_test"/>
+                <EventTemplateAdditionalField key="source" value="${log4j:configLocation}"/>
                 <EventTemplateAdditionalField key="hostname" value="test"/>
                 <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
             </JsonTemplateLayout>
@@ -54,7 +54,7 @@
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="Dynatrace"/>
+            <AppenderRef ref="AsyncHttp"/>
 
             <AppenderRef ref="Console">
                 <BurstFilter rate="0.1" maxBurst="3"/>

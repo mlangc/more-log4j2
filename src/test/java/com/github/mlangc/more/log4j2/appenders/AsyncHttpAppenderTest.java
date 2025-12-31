@@ -250,7 +250,7 @@ class AsyncHttpAppenderTest {
                 }
             }
 
-            AsyncHttpAppender.logBatchCompletionEvent(LOG, ForkJoinPool.commonPool(), event);
+            AsyncHttpAppender.logBatchCompletionEvent(LOG, null, event, ForkJoinPool.commonPool());
         }
 
         List<AsyncHttpAppender.BatchCompletionEvent> getLastBatchCompletionEvents() {
