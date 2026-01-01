@@ -225,11 +225,36 @@ on your classpath (see
 In principle, the `AsyncHttpAppender` can sustain throughputs similar to a file appender, in the ballpark of millions of log
 events per second, if the configured HTTP backend is able to absorb the traffic fast enough.
 
-In more realistic tests that I performed with the ingest APIs of Dynatrace, Datadog and Grafana, I was able to sustain ingest
+In tests that I performed with the ingest APIs of Dynatrace, Datadog and Grafana, I was able to sustain
 rates approaching 50_000 log events per second. Since compression rates around 20 are quite common for logs, especially if they
-are enriched with effectively constant attributes like hostnames, service names and so on, setting
-`contentEncoding="gzip"` is normally a good idea, since this trades a small amount of CPU time for a significant reduction in
+are enriched with constant attributes like hostnames, service names and so on, setting
+`contentEncoding="gzip"` is recommended, since this trades a small amount of CPU time for a significant reduction in
 network traffic.
+
+#### What if the backend is not keeping up?
+
+If the backend is not keeping up, unsent batches will accumulate in an internal queue, which is limited by the
+`maxBatchBufferBatches` and `maxBatchBufferBytes` options. If this queue overflows, you have 3 options:
+
+1. The log event that cannot be accommodated in the queue is dropped. This is the default behavior, since it's the safest strategy
+   assuming that logs are a secondary concern of your application.
+2. The appender blocks, until the space is available. You can use the `maxBlockOnOverflowMs` option to limit the time you want to
+   wait. Though this might sound like a good idea, be aware that even
+   `maxBlockOnOverflowMs=1` might seriously degrade the performance of your application, if your backend becomes unreachable.
+3. The log event that cannot be handled by the `AsyncHttpAppender` is forwarded to an "overflow appender". You can configure such
+   an appender by using a nested `OverflowAppenderRef`. Note that only events that cannot be enqueued are forwarded to this
+   appender; the log events in the already queued batches will never be forwarded to the overflow appender.
+
+#### What if the backend is unreliable, or temporary unavailable?
+
+The `AsyncHttpAppender` implements retries with randomized, exponential backoff. You can control retry behavior using these 
+options: `retries`, `httpRetryCodes` and `retryOnIoError`.
+
+If a batch cannot be delivered to the configured backend after having exhausted its retry budget, it is dropped, and all log
+events in this batch are lost. This will be accompanied by a warning being logged to the
+[StatusLogger](https://logging.apache.org/log4j/2.x/manual/status-logger.html) by default. You can get a notification if this
+happens by configuring a custom `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` using the
+`batchCompletionListener` option for monitoring purposes.
 
 #### Memory Usage & Churn
 
@@ -473,7 +498,7 @@ you can use the following recipe:
 | retries                         | int                                                 | 5                              | No       | Number of (exponentially backed off) retry attempts                                                                                             | No                                                        |
 | contentEncoding                 | encoding (identity or gzip)                         | identity                       | No       | Batch content encoding (identity/gzip)                                                                                                          | No                                                        |
 | filter (nested)                 | Filter                                              | -                              | No       | An optional filter                                                                                                                              | No                                                        |
-| overflowAppenderRef             | String                                              | null                           | No       | An appender ref to which events are routed if the internal batch buffer is full (the implementation will first wait for `maxBlockOnOverflowMs`) | No                                                        |
+| overflowAppenderRef (nested)    | String                                              | null                           | No       | An appender ref to which events are routed if the internal batch buffer is full (the implementation will first wait for `maxBlockOnOverflowMs`) | No                                                        |
 | properties (nested)             | Property[]                                          | -                              | No       | Additional HTTP headers                                                                                                                         | No                                                        |
 | httpClientSslConfigSupplier     | String                                              | null                           | No       | Class name for custom SSL config supplier                                                                                                       | No                                                        |
 | batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing                     | No       | Strategy for inserting separators between events. `if_missing` means that separators are only inserted, if they are not already present.        | No                                                        |
