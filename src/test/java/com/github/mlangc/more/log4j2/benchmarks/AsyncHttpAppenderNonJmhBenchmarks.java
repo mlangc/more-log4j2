@@ -56,12 +56,17 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         new BenchmarkTemplate() {
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.grafanaLokiV1PushOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
             }
 
             @Override
             int parallelism() {
                 return 4;
+            }
+
+            @Override
+            double variationTarget() {
+                return 2e-4;
             }
         }.run();
     }
@@ -80,6 +85,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         abstract String log4jConfigLocation();
 
         abstract int parallelism();
+
+        abstract double variationTarget();
 
         void setupBackend() throws Exception {
 
@@ -127,7 +134,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                         var avg0 = avgLogEventsPerSec.doubleValue();
                         avgLogEventsPerSec.setValue(0.9 * avg0 + 0.1 * newLinesLogged);
 
-                        if (Math.abs(avg0 / avgLogEventsPerSec.doubleValue() - 1.0) < 5e-4) {
+                        if (Math.abs(avg0 / avgLogEventsPerSec.doubleValue() - 1.0) < variationTarget()) {
                             out.printf("Found steady state at %s logs per second (droppedLogEvents=%s)%n",
                                     avgLogEventsPerSec.doubleValue(), overflowCountingAppender.currentCount());
                             out.printf("Stopping benchmark%n");
@@ -155,6 +162,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                         .toList();
 
                 logJobs.forEach(CompletableFuture::join);
+            } finally {
+                shutdown();
             }
         }
     }

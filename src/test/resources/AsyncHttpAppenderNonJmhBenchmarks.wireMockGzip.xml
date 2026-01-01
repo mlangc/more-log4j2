@@ -29,7 +29,8 @@
 
         <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
-                   shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000">
+                   shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000"
+                   contentEncoding="gzip" maxBatchLogEvents="50000">
 
             <OverflowAppenderRef ref="Count"/>
 
