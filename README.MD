@@ -225,11 +225,11 @@ on your classpath (see
 In principle, the `AsyncHttpAppender` can sustain throughputs similar to a file appender, in the ballpark of millions of log
 events per second, if the configured HTTP backend is able to absorb the traffic fast enough.
 
-In tests that I performed with the ingest APIs of Dynatrace, Datadog and Grafana, I was able to sustain
-rates approaching 50_000 log events per second. Since compression rates around 20 are quite common for logs, especially if they
-are enriched with constant attributes like hostnames, service names and so on, setting
-`contentEncoding="gzip"` is recommended, since this trades a small amount of CPU time for a significant reduction in
-network traffic.
+In tests that I performed with the ingest APIs of Dynatrace, Datadog and Grafana, I was able to sustain rates approaching 50_000
+log events per second. Since compression rates around 20 are quite common for logs, especially if they are enriched with constant
+attributes like hostnames, service names and so on, setting
+`contentEncoding="gzip"` is recommended, since this trades a small amount of CPU time for a significant reduction in network
+traffic.
 
 #### What if the backend is not keeping up?
 
@@ -247,7 +247,7 @@ If the backend is not keeping up, unsent batches will accumulate in an internal 
 
 #### What if the backend is unreliable, or temporary unavailable?
 
-The `AsyncHttpAppender` implements retries with randomized, exponential backoff. You can control retry behavior using these 
+The `AsyncHttpAppender` implements retries with randomized, exponential backoff. You can control retry behavior using these
 options: `retries`, `httpRetryCodes` and `retryOnIoError`.
 
 If a batch cannot be delivered to the configured backend after having exhausted its retry budget, it is dropped, and all log
@@ -481,6 +481,7 @@ you can use the following recipe:
 | url                             | URI                                                 | -                              | Yes      | Target HTTP endpoint                                                                                                                            | No                                                        |
 | layout (nested element)         | Layout                                              | -                              | Yes      | A layout to format log messages                                                                                                                 | No                                                        |
 | lingerMs                        | int                                                 | 5000                           | No       | Max time to wait before sending a batch                                                                                                         | No                                                        |
+| maxBlockOnOverflowMs            | int                                                 | 0                              | No       | Max time to block on overflow before dropping a log event                                                                                       | No                                                        |
 | maxBatchBytes                   | int                                                 | 250_000                        | No       | Max size of a batch (uncompressed). Can be set to `0` to disable batching.                                                                      | No                                                        |
 | maxBatchLogEvents               | int                                                 | 1000                           | No       | Max number of log events per batch                                                                                                              | No                                                        |
 | maxBatchBufferBatches           | int                                                 | 50                             | No       | Max number of batches to buffer (see also `maxBatchBufferBytes`)                                                                                | No                                                        |
