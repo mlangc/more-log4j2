@@ -155,10 +155,6 @@ public class AsyncHttpAppender extends AbstractAppender {
             boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener, int shutdownTimeoutMs,
             int maxBlockOnOverflowMs, int maxBatchBufferBatches, OverflowAppenderRef overflowAppenderRef) {
         super(name, filter, layout, ignoreExceptions, properties);
-        this.shutdownTimeoutMs = shutdownTimeoutMs;
-        this.maxBlockOnOverflowMs = maxBlockOnOverflowMs;
-        this.maxBatchBufferBatches = maxBatchBufferBatches;
-        this.overflowAppenderRef = overflowAppenderRef;
 
         if (maxBatchBufferBytes <= 0) {
             throw new IllegalArgumentException("maxBatchBufferBytes must not by <= 0, but got " + maxBatchBufferBytes);
@@ -184,6 +180,15 @@ public class AsyncHttpAppender extends AbstractAppender {
             throw new IllegalArgumentException(
                     "httpSuccessCodes=" + Arrays.toString(httpSuccessCodes) + " and httpRetryCodes=" + Arrays.toString(httpRetryCodes) + " must not intersect");
         }
+
+        if (shutdownTimeoutMs < 0) {
+            throw new IllegalArgumentException("shutdownTimeoutMs most not be negative, but got " + shutdownTimeoutMs);
+        }
+
+        this.shutdownTimeoutMs = shutdownTimeoutMs;
+        this.maxBlockOnOverflowMs = maxBlockOnOverflowMs;
+        this.maxBatchBufferBatches = maxBatchBufferBatches;
+        this.overflowAppenderRef = overflowAppenderRef;
 
         this.url = requireNonNull(url);
         this.maxBatchBytes = maxBatchBytes;
@@ -313,7 +318,8 @@ public class AsyncHttpAppender extends AbstractAppender {
                 HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
                 retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
                 shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs,
-                maxBlockOnOverflowMs, maxBatchBufferBatches, overflowAppenderRef);
+                maxBlockOnOverflowMs < 0 ? Integer.MAX_VALUE : maxBlockOnOverflowMs,
+                maxBatchBufferBatches, overflowAppenderRef);
     }
 
     private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes, int maxBatchBufferBatches) {
