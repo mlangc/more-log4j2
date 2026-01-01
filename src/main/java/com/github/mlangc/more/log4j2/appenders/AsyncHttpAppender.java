@@ -2,7 +2,7 @@
  * #%L
  * more-log4j2
  * %%
- * Copyright (C) 2025 Matthias Langer
+ * Copyright (C) 2025 - 2026 Matthias Langer
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -912,7 +912,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
 
         Runnable logBatchCompletion = () -> {
-            Supplier<String> contextString = () -> {
+            Supplier<String> statStr = () -> {
                 double compressionRate = (double) event.stats.batchBytesUncompressed / event.stats.batchBytesEffective;
                 return event.stats + " (compressionRate=" + compressionRate +
                        ", maxBatchBufferBytes=" + event.source.maxBatchBufferBytes +
@@ -920,13 +920,13 @@ public class AsyncHttpAppender extends AbstractAppender {
             };
 
             if (event.type instanceof BatchDeliveredError deliveredError) {
-                actualLog.warn(marker, () -> new ParameterizedMessage("Error delivering batch {}: {}", contextString.get(), deliveredError.httpStatus));
+                actualLog.warn(marker, () -> new ParameterizedMessage("Error delivering batch {}: {}", statStr.get(), deliveredError.httpStatus));
             } else if (event.type instanceof BatchDeliveryFailed deliveryFailed) {
-                actualLog.warn(marker, () -> new ParameterizedMessage("Delivery of batch {} failed", contextString.get(), deliveryFailed.exception));
+                actualLog.warn(marker, () -> new ParameterizedMessage("Delivery of batch {} failed", statStr.get(), deliveryFailed.exception));
             } else if (event.type instanceof BatchDeliveredSuccess deliveredSuccess) {
-                actualLog.info(marker, () -> new ParameterizedMessage("Delivered batch {} with {}", contextString.get(), deliveredSuccess.httpStatus));
+                actualLog.info(marker, () -> new ParameterizedMessage("Delivered batch {} with {}", statStr.get(), deliveredSuccess.httpStatus));
             } else {
-                actualLog.error(marker, () -> new ParameterizedMessage("Received event {} with unknown type: {}", contextString.get(), event.type));
+                actualLog.error(marker, () -> new ParameterizedMessage("Received event {} with unknown type: {}", statStr.get(), event.type));
             }
         };
 

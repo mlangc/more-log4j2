@@ -2,7 +2,7 @@
  * #%L
  * more-log4j2
  * %%
- * Copyright (C) 2025 Matthias Langer
+ * Copyright (C) 2025 - 2026 Matthias Langer
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         new BenchmarkTemplate() {
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.datadogOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.grafanaLokiV1PushOptimized.xml";
             }
 
             @Override
