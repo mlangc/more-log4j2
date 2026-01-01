@@ -21,7 +21,7 @@
 
 <Configuration status="WARN">
     <Appenders>
-        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}" lingerMs="1000">
+        <AsyncHttp name="AsyncHttp" url="${sys:wireMockHttpUrl}" lingerMs="500">
             <PatternLayout pattern="%msg"/>
         </AsyncHttp>
     </Appenders>

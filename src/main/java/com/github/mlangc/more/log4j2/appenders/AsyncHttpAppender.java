@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -111,7 +111,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     private static class FutureHolder {
         final String jobName;
-        CompletableFuture<?> future;
+        volatile CompletableFuture<?> future;
 
         FutureHolder(String jobName) {
             this.jobName = jobName;
@@ -430,7 +430,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             Batch batch = createBatch(currentBatch, batchSize);
             currentBufferBytes += batch.effectiveBytes();
             bufferedBatches.addLast(batch);
-            runAsyncTracked("drainBufferedBatches", this::drainBufferedBatches, () -> { });
+            runAsyncTracked("drainBufferedBatches", () -> drainBufferedBatches(lingerNs / 20), () -> { });
             currentBatch.clear();
             currentBatchBytes = 0;
             return true;
@@ -439,7 +439,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return false;
     }
 
-    private void drainBufferedBatches() {
+    private void drainBufferedBatches(long maxBackoffNs) {
         doWithLock(() -> {
             while (true) {
                 var oldestBatch = bufferedBatches.peekFirst();
@@ -448,7 +448,9 @@ public class AsyncHttpAppender extends AbstractAppender {
                 }
 
                 if (!allowedInFlight.tryAcquire()) {
-                    executor().schedule(this::drainBufferedBatches, ThreadLocalRandom.current().nextLong(lingerNs + 1), TimeUnit.NANOSECONDS);
+                    var backoffNs = ThreadLocalRandom.current().nextLong(maxBackoffNs + 1);
+                    var newMaxBackoffNs = Math.min(lingerNs, maxBackoffNs * 2);
+                    executor().schedule(() -> drainBufferedBatches(newMaxBackoffNs), backoffNs, TimeUnit.NANOSECONDS);
                     getStatusLogger().debug("Too many request in flight; trying later");
                     break;
                 }
@@ -826,9 +828,15 @@ public class AsyncHttpAppender extends AbstractAppender {
     }
 
     private CompletableFuture<?>[] currentlyTrackedFutures() {
-        return trackedFutures.stream().map(t -> t.future)
-                .filter(Objects::nonNull)
-                .toArray(CompletableFuture<?>[]::new);
+        var currentlyTracked = new ArrayList<CompletableFuture<?>>();
+        for (var trackedFuture : trackedFutures) {
+            var future = trackedFuture.future;
+            if (future != null) {
+                currentlyTracked.add(future);
+            }
+        }
+
+        return currentlyTracked.toArray(CompletableFuture<?>[]::new);
     }
 
     private ScheduledThreadPoolExecutor executor() {
