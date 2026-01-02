@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -32,6 +32,7 @@ import com.github.tomakehurst.wiremock.matching.UrlPattern;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.commons.lang3.mutable.MutableLong;
@@ -49,7 +50,6 @@ import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
 import org.apache.logging.log4j.core.filter.BurstFilter;
 import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.apache.logging.log4j.core.lookup.JavaLookup;
-import org.apache.logging.log4j.core.util.Log4jThreadFactory;
 import org.apache.logging.log4j.status.StatusLogger;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.*;
@@ -86,6 +86,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static com.github.mlangc.more.log4j2.test.helpers.WireMockHelpers.configureMappingWithRandomFailuresAndTimeouts;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -174,7 +175,7 @@ class AsyncHttpAppenderTest {
     @BeforeAll
     static void beforeAll() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
         sequence = new AtomicLong();
-        executor = new ScheduledThreadPoolExecutor(1, Log4jThreadFactory.createDaemonThreadFactory("test"));
+        executor = new ScheduledThreadPoolExecutor(2, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("test-%d").build());
         executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
 
         System.setProperty("wireMockPort", "" + wireMockExt.getPort());
@@ -508,39 +509,18 @@ class AsyncHttpAppenderTest {
     void shouldWorkReliablyUnderStress(StressTestCase testCase) {
         var url = testCase.https ? wireMockHttpsUrl : wireMockHttpUrl;
 
-        Runnable configureOkResponse = () ->
-                wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withLogNormalRandomDelay(testCase.medianServerResponseMs, testCase.medianServerResponseSigma)));
+        var timeoutRatio = testCase.mustEventuallySucceed ? 0.0 : 0.1;
+        var nonRetryableRatio = testCase.mustEventuallySucceed ? 0.0 : 0.1;
 
-        if (testCase.serverFailureRate <= 0) {
-            configureOkResponse.run();
-        } else if (testCase.serverFailureRate > 0) {
-            var random = new Random(313);
+        Runnable configureWireMock = () -> {
+            var mapping = post(wireMockPath);
+            configureMappingWithRandomFailuresAndTimeouts(
+                    mapping, 1500, testCase.serverFailureRate, testCase.medianServerResponseMs, testCase.medianServerResponseSigma, timeoutRatio, nonRetryableRatio);
+            wireMockExt.stubFor(mapping);
+        };
 
-            Runnable configureFailureResponse = () -> {
-                wireMockExt.stubFor(post(wireMockPath).willReturn(
-                        (switch (random.nextInt(3)) {
-                            case 0 -> serverError();
-                            case 1 -> serviceUnavailable();
-                            default -> aResponse().withStatus(507).withFault(Fault.values()[random.nextInt(Fault.values().length)]);
-                        }).withLogNormalRandomDelay(testCase.medianServerResponseMs, testCase.medianServerResponseSigma)));
-            };
-
-            Runnable configureRandomResponse;
-            if (testCase.serverFailureRate >= 1) {
-                configureRandomResponse = configureFailureResponse;
-            } else {
-                configureRandomResponse = () -> {
-                    if (random.nextDouble() < testCase.serverFailureRate) {
-                        configureFailureResponse.run();
-                    } else {
-                        configureOkResponse.run();
-                    }
-                };
-            }
-
-            configureRandomResponse.run();
-            schedulesToCancelAfterTest.add(executor.scheduleAtFixedRate(configureRandomResponse, 1, 1, TimeUnit.MILLISECONDS));
-        }
+        configureWireMock.run();
+        schedulesToCancelAfterTest.add(executor.scheduleAtFixedRate(configureWireMock, 1, 1, TimeUnit.MILLISECONDS));
 
         String configName = "CStress@" + testCase;
         ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
@@ -553,6 +533,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("maxBatchBytes", testCase.maxBatchBytes)
                         .addAttribute("maxBatchLogEvents", testCase.maxBatchLogEvents)
                         .addAttribute("maxBlockOnOverflowMs", testCase.maxBlockOnOverflowMs)
+                        .addAttribute("readTimeoutMs", 1000)
                         .addAttribute("retries", testCase.retries)
                         .addAttribute("httpClientSslConfigSupplier", AsyncHttpAppenderTest.class.getCanonicalName() + "$" + SslConfigSupplier.class.getSimpleName())
                         .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")

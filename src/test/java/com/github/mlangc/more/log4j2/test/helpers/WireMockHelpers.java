@@ -1,3 +1,22 @@
+/*-
+ * #%L
+ * more-log4j2
+ * %%
+ * Copyright (C) 2025 - 2026 Matthias Langer
+ * %%
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * #L%
+ */
 package com.github.mlangc.more.log4j2.test.helpers;
 
 import com.github.tomakehurst.wiremock.client.MappingBuilder;
@@ -11,7 +30,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.ok;
 
 public class WireMockHelpers {
     public static void configureMappingWithRandomFailuresAndTimeouts(
-            MappingBuilder mappingBuilder, int triggerTimeoutMs, double failureRate, int medianResponseTime,
+            MappingBuilder mappingBuilder, int triggerTimeoutMs, double failureRate,
+            int medianResponseTime, int responseTimeSigma,
             double timeoutRatio, double nonRetryableRatio) {
 
         ResponseDefWithMetadata respDefWithMetadata;
@@ -29,7 +49,7 @@ public class WireMockHelpers {
 
         var resp = respDefWithMetadata.respDef;
         if (medianResponseTime > 0 && !respDefWithMetadata.timeoutSet) {
-            resp.withLogNormalRandomDelay(medianResponseTime, 1);
+            resp.withLogNormalRandomDelay(medianResponseTime, responseTimeSigma);
         }
 
         mappingBuilder.willReturn(resp);
@@ -50,7 +70,7 @@ public class WireMockHelpers {
         } else if (ThreadLocalRandom.current().nextBoolean()) {
             respDef = aResponse().withStatus(429).withBody("Too Many Requests");
         } else {
-            respDef = aResponse().withFault(Fault.values()[ThreadLocalRandom.current().nextInt(Fault.values().length)]);
+            respDef = aResponse().withStatus(508).withFault(Fault.values()[ThreadLocalRandom.current().nextInt(Fault.values().length)]);
         }
 
         return new ResponseDefWithMetadata(respDef, timeoutSet);
