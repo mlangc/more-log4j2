@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,7 +23,6 @@ import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender;
 import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.mutable.MutableDouble;
@@ -39,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.IntStream;
 
+import static com.github.mlangc.more.log4j2.test.helpers.WireMockHelpers.configureMappingWithRandomFailuresAndTimeouts;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static java.lang.System.out;
@@ -47,21 +47,36 @@ import static java.lang.System.out;
 public class AsyncHttpAppenderNonJmhBenchmarks {
     static final Marker BENCHMARK_SFM_MARKER = MarkerManager.getMarker("BenchmarkSfm");
 
-    private static final ScheduledExecutorService SCHEDULED_EXECUTOR_SERVICE = Executors.newSingleThreadScheduledExecutor(
+    private static final ScheduledExecutorService SCHEDULED_EXECUTOR_SERVICE = Executors.newScheduledThreadPool(4,
             new ThreadFactoryBuilder().setDaemon(true).setNameFormat(AsyncHttpAppenderNonJmhBenchmarks.class.getSimpleName() + ":%d").build());
 
     public static void main(String[] args) throws Exception {
         System.setProperty("benchmarkLog4jPattern", "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n");
 
-        new BenchmarkTemplate() {
+        new WiremockBenchmarkTemplate() {
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.wireMockAggressiveHttpTimeouts.xml";
             }
 
             @Override
             int parallelism() {
                 return 4;
+            }
+
+            @Override
+            double simulatedFailureRate() {
+                return 0.1;
+            }
+
+            @Override
+            int simulatedMedianResponseTimeMs() {
+                return 1;
+            }
+
+            @Override
+            int triggerTimeoutMs() {
+                return 2_000;
             }
 
             @Override
@@ -172,9 +187,11 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
         final WireMockServer wireMockServer = new WireMockServer(options().dynamicPort().maxRequestJournalEntries(100));
         final String wireMockPath = "/logs/" + getClass().getSimpleName();
 
+        ScheduledFuture<?> wireMockReconfigSchedule;
+
         @Override
         String log4jConfigLocation() {
-            return "AsyncHttpAppenderNonJmhBenchmarks.wireMockVanilla.xml";
+            return "AsyncHttpAppenderNonJmhBenchmarks.wireMockAggressiveHttpTimeouts.xml";
         }
 
         @Override
@@ -182,20 +199,45 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
             wireMockServer.start();
             var wireMockHttpUrl = "http://localhost:" + wireMockServer.port() + wireMockPath;
             System.setProperty("wireMockHttpUrl", wireMockHttpUrl);
+            out.printf("WireMock is listening at %s%n", wireMockHttpUrl);
 
-            var stubConfiguration = post(urlEqualTo(wireMockPath));
-            configureWireMock(stubConfiguration);
-            wireMockServer.stubFor(stubConfiguration);
+            Runnable configureWiremock = () -> {
+                var stubConfiguration = post(urlEqualTo(wireMockPath));
+                configureMappingWithRandomFailuresAndTimeouts(
+                        stubConfiguration, triggerTimeoutMs(), simulatedFailureRate(), simulatedMedianResponseTimeMs(), 0.1, 0.01);
+
+                wireMockServer.stubFor(stubConfiguration);
+            };
+
+            if (0 < simulatedFailureRate() && simulatedFailureRate() < 1) {
+                wireMockReconfigSchedule = SCHEDULED_EXECUTOR_SERVICE.scheduleAtFixedRate(configureWiremock, 1, 1, TimeUnit.MILLISECONDS);
+            }
+
+            configureWiremock.run();
         }
 
-        void configureWireMock(MappingBuilder mappingBuilder) {
-            mappingBuilder.willReturn(ok());
+        double simulatedFailureRate() {
+            return 0.0;
+        }
+
+        int simulatedMedianResponseTimeMs() {
+            return 0;
+        }
+
+        int triggerTimeoutMs() {
+            return 11_000;
         }
 
         @Override
         void shutdown() {
+            if (wireMockReconfigSchedule != null) {
+                wireMockReconfigSchedule.cancel(false);
+                wireMockReconfigSchedule = null;
+            }
+
             wireMockServer.verify(moreThan(10), postRequestedFor(urlEqualTo(wireMockPath)));
             wireMockServer.stop();
         }
     }
+
 }

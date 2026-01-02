@@ -66,6 +66,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.net.Socket;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
@@ -1256,7 +1257,7 @@ class AsyncHttpAppenderTest {
         var scenarioName = "okFailFailScenario";
 
         wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
-                .willReturn(ok().withStatusMessage("OK"))
+                .willReturn(ok().withBody("OK"))
                 .whenScenarioStateIs(Scenario.STARTED)
                 .willSetStateTo("fail1"));
 
@@ -1266,7 +1267,7 @@ class AsyncHttpAppenderTest {
                 .willSetStateTo("fail2"));
 
         wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
-                .willReturn(badRequest().withStatusMessage("Bad Request"))
+                .willReturn(badRequest().withBody("Bad Request"))
                 .whenScenarioStateIs("fail2")
                 .willSetStateTo(Scenario.STARTED));
 
@@ -1283,8 +1284,15 @@ class AsyncHttpAppenderTest {
                 assertThat(batchCompletionListener.getLastBatchCompletionEvents())
                         .hasSize(1)
                         .allSatisfy(evt -> {
-                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, deliveredSuccess ->
-                                    assertThat(deliveredSuccess.httpStatus().code()).isEqualTo(200));
+                            Supplier<String> debugInfo = () -> wireMockExt.getAllServeEvents().stream()
+                                    .map(ServeEvent::getResponse)
+                                    .map(LoggedResponse::getBodyAsString)
+                                    .collect(Collectors.joining(",", "(((", ")))"));
+
+                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, deliveredSuccess -> {
+                                assertThat(deliveredSuccess.httpStatus().code()).isEqualTo(200);
+                                assertThat(deliveredSuccess.httpStatus().message()).as(debugInfo).isEqualTo("OK");
+                            });
 
                             assertThat(evt.stats().tries()).isOne();
                             assertThat(evt.stats().batchBytesUncompressed())
@@ -1316,8 +1324,10 @@ class AsyncHttpAppenderTest {
                         .hasSize(3)
                         .allSatisfy(evt -> assertThat(evt.source()).isSameAs(appender))
                         .last().satisfies(evt -> {
-                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredError.class, deliveredError ->
-                                    assertThat(deliveredError.httpStatus().code()).isEqualTo(400));
+                            assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredError.class, deliveredError -> {
+                                assertThat(deliveredError.httpStatus().code()).isEqualTo(400);
+                                assertThat(deliveredError.httpStatus().message()).isEqualTo("Bad Request");
+                            });
 
                             assertThat(evt.stats().tries()).isOne();
                         });
@@ -1533,6 +1543,49 @@ class AsyncHttpAppenderTest {
                 .toArray();
 
         assertThat(elapsedMillis).isSorted();
+    }
+
+    @Test
+    void shouldRespectReadTimeoutMs() {
+        var timeoutMs = 50;
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(2 * timeoutMs)));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("lingerMs", 1)
+                        .addAttribute("readTimeoutMs", timeoutMs)
+                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var completionListener = (TestBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+            var log = context.getLogger(getClass());
+
+            log.info("xxx");
+
+            Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() ->
+                    assertThat(completionListener.getLastBatchCompletionEvents())
+                            .hasSize(1)
+                            .last().satisfies(evt -> {
+                                assertThat(evt.type()).isInstanceOfSatisfying(
+                                        AsyncHttpAppender.BatchDeliveryFailed.class,
+                                        f -> assertThat(f.exception()).cause().isInstanceOf(HttpTimeoutException.class));
+                            }));
+
+            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(timeoutMs / 2)));
+
+            log.info("yyy");
+
+            Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() ->
+                    assertThat(completionListener.getLastBatchCompletionEvents())
+                            .hasSize(2)
+                            .last().satisfies(evt -> assertThat(evt.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveredSuccess.class)));
+
+        }
     }
 
     @Test
