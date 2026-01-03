@@ -12,3 +12,4 @@ pom.xml.releaseBackup
 pom.xml.tag
 *.jfr
 *.log
+*.bkp
