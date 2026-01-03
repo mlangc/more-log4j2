@@ -220,7 +220,7 @@ a brief look at its overall architecture:
 
 ![AsyncHttpAppender Archtecture](/doc/diagrams/AsyncHttpAppenderArchitecture.png)
 
-As you can see, logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed
+Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed
 to the batch buffer. Buffered batches are drained in a FIFO manner, and pushed to the configured HTTP backend.
 
 Draining of the batch buffer happens asynchronously, and is accomplished by a single thead, that uses the asynchronous API
