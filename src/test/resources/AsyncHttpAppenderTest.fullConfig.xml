@@ -34,7 +34,7 @@
                    readTimeoutMs="999" maxConcurrentRequests="17" method="PUT" batchSeparatorInsertionStrategy="always" retries="11"
                    httpSuccessCodes="200,201,202,203" httpRetryCodes="500,502" retryOnIoError="false" contentEncoding="gzip"
                    httpClientSslConfigSupplier="com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$SslConfigSupplier"
-                   shutdownTimeoutMs="323" maxBlockOnOverflowMs="456">
+                   shutdownTimeoutMs="323" maxBlockOnOverflowMs="456" maxBackoffMs="68">
             <OverflowAppenderRef ref="Console">
                 <BurstFilter rate="1" maxBurst="1"/>
             </OverflowAppenderRef>

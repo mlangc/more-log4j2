@@ -334,6 +334,7 @@ class AsyncHttpAppenderTest {
             assertThat(appender.httpRetryCodes()).containsExactly(500, 502);
             assertThat(appender.shutdownTimeoutMs()).isEqualTo(323);
             assertThat(appender.maxBlockOnOverflowMs()).isEqualTo(456);
+            assertThat(appender.maxBackoffMs()).isEqualTo(68);
 
             assertThat(appender.overflowAppenderRef())
                     .isNotNull()
@@ -410,6 +411,7 @@ class AsyncHttpAppenderTest {
         double serverFailureRate;
         int retries = 5;
         int lingerMs = 100;
+        int maxBackoffMs = 200;
         int maxBatchLogEvents = 5000;
         int maxBatchBytes = 250_000;
         boolean mustEventuallySucceed = true;
@@ -535,6 +537,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("maxBlockOnOverflowMs", testCase.maxBlockOnOverflowMs)
                         .addAttribute("readTimeoutMs", 1000)
                         .addAttribute("retries", testCase.retries)
+                        .addAttribute("maxBackoffMs", testCase.maxBackoffMs)
                         .addAttribute("httpClientSslConfigSupplier", AsyncHttpAppenderTest.class.getCanonicalName() + "$" + SslConfigSupplier.class.getSimpleName())
                         .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
@@ -546,7 +549,7 @@ class AsyncHttpAppenderTest {
         CountingAppender countingAppender;
         try {
             Logger logger = context.getLogger(getClass());
-            batchCompletionListener = (TestBatchCompletionListener) getAsyncHttpAppender(context).batchCompletionListener();
+            batchCompletionListener = (TestBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
             countingAppender = context.getConfiguration().getAppender("Count");
 
             IntFunction<Runnable> logBurstJob = id -> () -> {
@@ -1338,7 +1341,7 @@ class AsyncHttpAppenderTest {
         var numLogLines = maxBatchBufferBatches + 10;
         TestBatchCompletionListener completionListener;
         try (var context = TestHelpers.loggerContextFromConfig(config)) {
-            var appender = getAsyncHttpAppender(context);
+            var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
             completionListener = (TestBatchCompletionListener) appender.batchCompletionListener();
 
             var log = context.getLogger(getClass());
@@ -1537,6 +1540,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("url", wireMockHttpUrl)
                         .addAttribute("maxBatchLogEvents", 1)
                         .addAttribute("lingerMs", 1)
+                        .addAttribute("maxBackoffMs", 1)
                         .addAttribute("readTimeoutMs", timeoutMs)
                         .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
@@ -1643,18 +1647,63 @@ class AsyncHttpAppenderTest {
         }
     }
 
-    static AsyncHttpAppender getAsyncHttpAppender(LoggerContext context) {
-        return getAsyncHttpAppender(context.getConfiguration());
-    }
+    @RepeatedTest(5)
+    void maxBackoffMsShouldBeRespected() {
+        int retries = 20;
 
-    static AsyncHttpAppender getAsyncHttpAppender(Configuration configuration) {
-        return configuration.getAppenders().values().stream().flatMap(a -> {
-            if (a instanceof AsyncHttpAppender asyncHttpAppender) {
-                return Stream.of(asyncHttpAppender);
+        for (int i = 0; i <= retries; i++) {
+            var stubBuilder = post(wireMockPath).inScenario("BackoffScenario");
+            var currentState = i == 0 ? Scenario.STARTED : ("state_" + i);
+            var nextState = i == retries ? Scenario.STARTED : ("state_" + (i + 1));
+
+            stubBuilder.whenScenarioStateIs(currentState).willSetStateTo(nextState);
+
+            if (i == retries) {
+                stubBuilder.willReturn(ok());
             } else {
-                return Stream.empty();
+                stubBuilder.willReturn(serviceUnavailable());
             }
-        }).findFirst().orElseThrow();
+
+            wireMockExt.stubFor(stubBuilder);
+        }
+
+        IntToLongFunction totalBackoffNanosForBackoffMs = backoffMs -> {
+            var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+            configBuilder = configBuilder
+                    .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                            .addAttribute("url", wireMockHttpUrl)
+                            .addAttribute("maxBatchLogEvents", 1)
+                            .addAttribute("lingerMs", 1)
+                            .addAttribute("retries", retries)
+                            .addAttribute("maxConcurrentRequests", 1)
+                            .addAttribute("maxBackoffMs", backoffMs)
+                            .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                            .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                    .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+            try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+                var completionListener = (TestBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+                var log = context.getLogger(getClass());
+                log.info("test");
+
+                Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                    assertThat(completionListener.getLastBatchCompletionEvents())
+                            .hasSize(1)
+                            .allSatisfy(evt -> {
+                                assertThat(evt.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveredSuccess.class);
+                                assertThat(evt.stats().tries()).isEqualTo(retries + 1);
+                            });
+                });
+
+                return completionListener.getLastBatchCompletionEvents().stream()
+                        .mapToLong(evt -> evt.stats().backoffNanos())
+                        .sum();
+            }
+        };
+
+        var totalBackoffNanosForMaxBackoffMs0 = totalBackoffNanosForBackoffMs.applyAsLong(1);
+        var totalBackoffNanosForMaxBackoffMs1 = totalBackoffNanosForBackoffMs.applyAsLong(20);
+        assertThat(totalBackoffNanosForMaxBackoffMs0).isLessThan(totalBackoffNanosForMaxBackoffMs1);
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {

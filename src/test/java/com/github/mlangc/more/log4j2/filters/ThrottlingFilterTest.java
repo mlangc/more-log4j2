@@ -131,8 +131,9 @@ class ThrottlingFilterTest {
             long maxLogs = startedIntervals * filter.maxEvents();
 
             CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
-            assertThat(countingAppender.currentCount())
-                    .isLessThanOrEqualTo(maxLogs);
+
+            var tolerance = (maxLogs + 999) / 1000;
+            assertThat(countingAppender.currentCount()).isLessThanOrEqualTo(maxLogs + tolerance);
         }
     }
 

@@ -67,7 +67,6 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     private final URI url;
     private final int maxBatchBytes;
-    private final int lingerMs;
     private final long lingerNs;
     private final int maxConcurrentRequests;
     private final int maxBatchLogEvents;
@@ -153,7 +152,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             int maxBatchLogEvents, HttpClientManager httpClientManager, NanoClock ticker, Configuration configuration, HttpMethod method,
             byte[] batchPrefix, byte[] batchSeparator, byte[] batchSuffix, int retries, ContentEncoding contentEncoding, int maxBatchBufferBytes, int[] httpSuccessCodes, int[] httpRetryCodes,
             boolean retryOnIoError, BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy, String batchCompletionListener, int shutdownTimeoutMs,
-            int maxBlockOnOverflowMs, int maxBatchBufferBatches, OverflowAppenderRef overflowAppenderRef) {
+            int maxBlockOnOverflowMs, int maxBatchBufferBatches, OverflowAppenderRef overflowAppenderRef, int maxBackoffMs) {
         super(name, filter, layout, ignoreExceptions, properties);
 
         if (maxBatchBufferBytes <= 0) {
@@ -185,6 +184,10 @@ public class AsyncHttpAppender extends AbstractAppender {
             throw new IllegalArgumentException("shutdownTimeoutMs most not be negative, but got " + shutdownTimeoutMs);
         }
 
+        if (maxBackoffMs < 1) {
+            throw new IllegalArgumentException("maxBackoffMs must not be smaller than 1, but got " + maxBackoffMs);
+        }
+
         this.shutdownTimeoutMs = shutdownTimeoutMs;
         this.maxBlockOnOverflowMs = maxBlockOnOverflowMs;
         this.maxBatchBufferBatches = maxBatchBufferBatches;
@@ -193,7 +196,6 @@ public class AsyncHttpAppender extends AbstractAppender {
         this.url = requireNonNull(url);
         this.maxBatchBytes = maxBatchBytes;
         this.maxBatchBufferBytes = maxBatchBufferBytes;
-        this.lingerMs = lingerMs;
         this.lingerNs = TimeUnit.MILLISECONDS.toNanos(lingerMs);
         this.maxConcurrentRequests = maxConcurrentRequests;
         this.allowedInFlight = new Semaphore(maxConcurrentRequests);
@@ -214,7 +216,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         var retryConfig = new HttpRetryManager.Config(
                 retries,
-                2 * lingerMs,
+                maxBackoffMs,
                 s -> contains(s, httpSuccessCodes),
                 retryOnIoError ? e -> e instanceof IOException : e -> false,
                 s -> contains(s, httpRetryCodes));
@@ -285,6 +287,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             @PluginAttribute(value = "batchSuffix") String batchSuffix,
             @PluginAttribute(value = "batchSeparatorInsertionStrategy", defaultString = "if_missing") BatchSeparatorInsertionStrategy batchSeparatorInsertionStrategy,
             @PluginAttribute(value = "retries", defaultInt = 5) int retries,
+            @PluginAttribute(value = "maxBackoffMs", defaultInt = 10_000) int maxBackoffMs,
             @PluginAttribute(value = "httpSuccessCodes", defaultString = "200,202,204") String httpSuccessCodes,
             @PluginAttribute(value = "httpRetryCodes", defaultString = "429,500,502,503,504") String httpRetryCodes,
             @PluginAttribute(value = "retryOnIoError", defaultBoolean = true) boolean retryOnIoError,
@@ -319,7 +322,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
                 shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs,
                 maxBlockOnOverflowMs < 0 ? Integer.MAX_VALUE : maxBlockOnOverflowMs,
-                maxBatchBufferBatches, overflowAppenderRef);
+                maxBatchBufferBatches, overflowAppenderRef, maxBackoffMs);
     }
 
     private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes, int maxBatchBufferBatches) {
@@ -341,7 +344,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                     scheduledFlush.cancel(false);
                 }
 
-                scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerMs, TimeUnit.MILLISECONDS);
+                scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
             }
 
             if (needsFlushAssumeLocked(eventBytes)) {
@@ -645,7 +648,11 @@ public class AsyncHttpAppender extends AbstractAppender {
     }
 
     int lingerMs() {
-        return lingerMs;
+        return Math.toIntExact(TimeUnit.NANOSECONDS.toMillis(lingerNs));
+    }
+
+    int maxBackoffMs() {
+        return retryManager.config.maxBackoffMs();
     }
 
     public int maxBatchBytes() {
@@ -789,7 +796,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         var stoppedCleanly = true;
         try {
-            var waitBeforeDisablingRetriesMillis = timeUnit.toMillis(timeout) - Math.round(retryManager.config.maxBackoffMillis() * 1.1);
+            var waitBeforeDisablingRetriesMillis = timeUnit.toMillis(timeout) - Math.round(retryManager.config.maxBackoffMs() * 1.1);
 
             if (waitBeforeDisablingRetriesMillis <= 0) {
                 retryManager.disableRetries();

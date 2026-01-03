@@ -215,24 +215,24 @@ log monitoring solutions, like [Dynatrace](#Publishing-Logs-To-Dynatrace), [Data
 
 #### Overall Architecture
 
-In order to better understand the impact of the various configuration options the appender offers, it is useful to have
-a brief look at its overall architecture:
+In order to better understand the impact of the various configuration options the appender offers, it is useful to have a brief
+look at its overall architecture:
 
 ![AsyncHttpAppender Archtecture](/doc/diagrams/AsyncHttpAppenderArchitecture.png)
 
-Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed
-to the batch buffer. Buffered batches are drained in a FIFO manner, and pushed to the configured HTTP backend.
+Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed to the batch buffer.
+Buffered batches are drained in a FIFO manner, and pushed to the configured HTTP backend.
 
-Draining of the batch buffer happens asynchronously, and is accomplished by a single thead, that uses the asynchronous API
-of the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html).
+Draining of the batch buffer happens asynchronously, and is accomplished by a single thead, that uses the asynchronous API of
+the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html).
 
 #### What if the backend is not keeping up?
 
 If the backend is not keeping up, unsent batches accumulate in the batch buffer, which is limited by the
 `maxBatchBufferBatches` and `maxBatchBufferBytes` options. If the buffer overflows, you have 3 options:
 
-1. The log event that cannot be accommodated is dropped. This is the default behavior, since it's the safest strategy
-   assuming that logs are a secondary concern of your application.
+1. The log event that cannot be accommodated is dropped. This is the default behavior, since it's the safest strategy assuming
+   that logs are a secondary concern of your application.
 2. The appender blocks, until enough space is available. You can use the `maxBlockOnOverflowMs` option to limit the time you want
    to wait. Though this might sound like a good idea, be aware that even
    `maxBlockOnOverflowMs=1` might seriously degrade the performance of your application, if your backend becomes unreachable.
@@ -243,7 +243,7 @@ If the backend is not keeping up, unsent batches accumulate in the batch buffer,
 #### What if the backend is unreliable, or temporary unavailable?
 
 The `AsyncHttpAppender` implements retries with randomized, exponential backoff. You can control retry behavior using these
-options: `retries`, `httpRetryCodes` and `retryOnIoError`.
+options: `retries`, `maxBackoffMs`, `httpRetryCodes` and `retryOnIoError`.
 
 If a batch cannot be delivered to the configured backend after having exhausted its retry budget, it is dropped, and all log
 events in this batch are lost. This will be accompanied by a warning being logged to the
@@ -511,6 +511,7 @@ you can use the following recipe:
 | httpRetryCodes                  | String                                              | 429, 500, 502, 503, 504        | No       | HTTP status codes that trigger a retry                                                                                                          | No                                                        |
 | retryOnIoError                  | boolean                                             | true                           | No       | Retry on I/O errors                                                                                                                             | No                                                        |
 | retries                         | int                                                 | 5                              | No       | Number of (exponentially backed off) retry attempts                                                                                             | No                                                        |
+| maxBackoffMs                    | int                                                 | 10_000                         | No       | Max backoff time to wait between retries                                                                                                        | No                                                        |
 | contentEncoding                 | encoding (identity or gzip)                         | identity                       | No       | Batch content encoding (identity/gzip)                                                                                                          | No                                                        |
 | filter (nested)                 | Filter                                              | -                              | No       | An optional filter                                                                                                                              | No                                                        |
 | overflowAppenderRef (nested)    | String                                              | null                           | No       | An appender ref to which events are routed if the internal batch buffer is full (the implementation will first wait for `maxBlockOnOverflowMs`) | No                                                        |
@@ -524,11 +525,12 @@ you can use the following recipe:
 ### Read this if you want to play with the `batchCompletionListener` option
 
 The `AsyncHttpAppender` can expose internal data for monitoring purposes to a user supplied
-`com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` implementation. Though the interface is 
-simple, and hopefully self-explanatory, it is very easy to shoot yourself into the foot unless you read the following paragraph 
+`com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` implementation. Though the interface is
+simple, and hopefully self-explanatory, it is very easy to shoot yourself into the foot unless you read the following paragraph
 carefully:
-1. Your `BatchCompletionListener` will be executed by the thread that drains the batch buffer. This thread must never be 
-   blocked or monopolized for longer periods of time, or else your logs might not be drained in time.
+
+1. Your `BatchCompletionListener` will be executed by the thread that drains the batch buffer. This thread must never be blocked
+   or monopolized for longer periods of time, or else your logs might not be drained in time.
 2. Logs generated directly or indirectly from a `BatchCompletionListener` are problematic, since they lead to recursive
    invocations of the appender. If you most log, do so asynchronously, from another thread and ensure that the amount of logs that
    you generate in the listener is small compared to `maxBatchBytes` and
@@ -539,11 +541,13 @@ carefully:
 The `NullAppender` is the Log4j2 equivalent of `/dev/null`: It silently discards all logs sent to it.
 
 It can be used like
+
 ```xml
+
 <Null name="Null"/>
 ```
 
-and can be useful in connection with an [arbiter](https://logging.apache.org/log4j/2.x/manual/configuration.html#arbiters), for 
+and can be useful in connection with an [arbiter](https://logging.apache.org/log4j/2.x/manual/configuration.html#arbiters), for
 example like this:
 
 ```xml
@@ -569,15 +573,12 @@ example like this:
     </Select>
 </Appenders>
 <Loggers>
-  <Root level="info">
-      <AppenderRef ref="Console"/>
-      <AppenderRef ref="Dynatrace"/>
-  </Root>
+<Root level="info">
+    <AppenderRef ref="Console"/>
+    <AppenderRef ref="Dynatrace"/>
+</Root>
 </Loggers>
 ```
-
-
-
 
 ## Additional Notes
 

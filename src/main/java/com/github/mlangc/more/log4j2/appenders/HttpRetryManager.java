@@ -34,26 +34,28 @@ class HttpRetryManager {
     private final NanoClock nanoClock = System::nanoTime;
     private final ScheduledExecutorService executor;
     private final long startMaxBackoffNanos;
-    private final long maxDelayNanos;
+    private final long maxBackoffNanos;
     private volatile boolean retriesDisabled;
 
     HttpRetryManager(Config config, ScheduledExecutorService executor) {
         this.config = config;
         this.executor = executor;
 
-        this.maxDelayNanos = TimeUnit.MILLISECONDS.toNanos(config.maxBackoffMillis);
-        this.startMaxBackoffNanos = Math.max(1, maxDelayNanos / 15);
+        this.maxBackoffNanos = TimeUnit.MILLISECONDS.toNanos(config.maxBackoffMs);
+
+        var statBackoffNanosDivisor = (1L << Math.min(63, Math.max(0, config.maxRetries - 1)));
+        this.startMaxBackoffNanos = Math.max(TimeUnit.MILLISECONDS.toNanos(1), (maxBackoffNanos + statBackoffNanosDivisor - 1) / statBackoffNanosDivisor);
     }
 
-    record Config(int maxRetries, int maxBackoffMillis, IntPredicate statusCodeSuccessPredicate, Predicate<Exception> exceptionRetryPredicate,
+    record Config(int maxRetries, int maxBackoffMs, IntPredicate statusCodeSuccessPredicate, Predicate<Exception> exceptionRetryPredicate,
                   IntPredicate statusCodeRetryPredicate) {
         Config {
             if (maxRetries < 0) {
                 throw new IllegalArgumentException("maxRetries=" + maxRetries);
             }
 
-            if (maxBackoffMillis < 1) {
-                throw new IllegalArgumentException("maxBackoffMillis=" + maxBackoffMillis);
+            if (maxBackoffMs < 1) {
+                throw new IllegalArgumentException("maxBackoffMs=" + maxBackoffMs);
             }
 
             requireNonNull(statusCodeSuccessPredicate);
@@ -118,9 +120,9 @@ class HttpRetryManager {
     private CompletableFuture<HttpStatusAndStats> scheduleRetry(Supplier<CompletableFuture<HttpStatus>> op, int tries,
                                                                 long currentMaxBackoffNanos, long startNanos, long accumulatedRequestNanos, long accumulatedBackoffNanos) {
         var res = new CompletableFuture<HttpStatusAndStats>();
-        long backoffNanos = ThreadLocalRandom.current().nextLong(currentMaxBackoffNanos);
+        long backoffNanos = ThreadLocalRandom.current().nextLong(currentMaxBackoffNanos + 1);
         executor.schedule(() -> {
-            run0(op, tries + 1, Math.min(maxDelayNanos, currentMaxBackoffNanos * 2), startNanos, accumulatedRequestNanos, accumulatedBackoffNanos + backoffNanos)
+            run0(op, tries + 1, Math.min(maxBackoffNanos, currentMaxBackoffNanos * 2), startNanos, accumulatedRequestNanos, accumulatedBackoffNanos + backoffNanos)
                     .whenComplete((rr, e) -> {
                         if (e == null) {
                             res.complete(rr);

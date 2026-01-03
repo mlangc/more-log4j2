@@ -307,8 +307,8 @@ class HttpRetryManagerTest {
 
     @Test
     void shouldSetResponseAndDelayNanosToPlausibleValuesOnSuccess2() throws InterruptedException {
-        int maxDelayMillis = 313;
-        var retryManager = new HttpRetryManager(new Config(Integer.MAX_VALUE, maxDelayMillis, s -> s == 200, e -> false, s -> s == 500), executor);
+        int maxBackoffMs = 313;
+        var retryManager = new HttpRetryManager(new Config(Integer.MAX_VALUE, maxBackoffMs, s -> s == 200, e -> false, s -> s == 500), executor);
         var success = new HttpStatus(200, "Ok");
         var retry = new HttpStatus(500, "Internal Server Error");
 
@@ -317,7 +317,7 @@ class HttpRetryManagerTest {
 
             @Override
             public CompletableFuture<HttpStatus> get() {
-                return CompletableFuture.completedFuture(requests++ == 0 ? retry : success);
+                return CompletableFuture.completedFuture(requests++ <= 1 ? retry : success);
             }
         };
 
@@ -327,7 +327,7 @@ class HttpRetryManagerTest {
                 .satisfies(s -> {
                     assertThat(s.status()).isEqualTo(success);
                     assertThat(s.stats().requestNanos()).isLessThan(TimeUnit.MILLISECONDS.toNanos(5));
-                    assertThat(s.stats().backoffNanos()).isGreaterThan(0).isLessThan(TimeUnit.MILLISECONDS.toNanos(maxDelayMillis));
+                    assertThat(s.stats().backoffNanos()).isGreaterThan(0).isLessThan(TimeUnit.MILLISECONDS.toNanos(maxBackoffMs));
                     assertThat(s.stats().totalNanos()).isGreaterThanOrEqualTo(s.stats().backoffNanos() + s.stats().requestNanos());
                 });
     }
