@@ -19,6 +19,7 @@ the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at 
     * [NeutralFilter](#AcceptAllFilter--NeutralFilter)
 * Appenders
     * [AsyncHttpAppender](#Async-HttpAppender)
+    * [NullAppender](#Null-Appender)
 
 ### Routing Filter
 
@@ -506,6 +507,19 @@ you can use the following recipe:
 | maxBatchBufferBytes             | int                                                 | `50 * maxBatchBytes + 250_000` | No       | Max total buffer size for batches (potentially compressed)                                                                                      | Yes                                                       |
 | ignoreExceptions                | boolean                                             | true                           | No       | Ignore exceptions during logging                                                                                                                | Yes                                                       |
 | batchCompletionListener         | String                                              | null                           | No       | Class name for custom batch completion listener                                                                                                 | Yes                                                       |
+
+### Null Appender
+
+The `NullAppender` is the appender equivalent of `/dev/null` and can be created like
+```xml
+<Null name="Null"/>
+```
+
+It can be useful in connection with an [arbiter](https://logging.apache.org/log4j/2.x/manual/configuration.html#arbiters), for 
+example like this:
+
+
+
 
 ## Additional Notes
 

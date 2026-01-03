@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+  <Appenders>
+    <Select>
+      <SystemPropertyArbiter propertyName="log4j.select.appender" propertyValue="null">
+        <Null name="Main"/>
+      </SystemPropertyArbiter>
+      <DefaultArbiter>
+        <CountingAppender name="Main"/>
+      </DefaultArbiter>
+    </Select>
+  </Appenders>
+  <Loggers>
+    <Root level="info">
+      <AppenderRef ref="Main"/>
+    </Root>
+  </Loggers>
+</Configuration>
+

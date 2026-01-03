@@ -908,6 +908,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     public String toString() {
         return "AsyncHttpAppender{" +
                "name='" + getName() + '\'' +
+               ", state=" + getState() +
                ", url=" + url +
                ", method=" + method +
                '}';
