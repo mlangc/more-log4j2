@@ -510,13 +510,45 @@ you can use the following recipe:
 
 ### Null Appender
 
-The `NullAppender` is the appender equivalent of `/dev/null` and can be created like
+The `NullAppender` is the Log4j2 equivalent of `/dev/null`: It silently discards all logs sent to it.
+
+It can be used like
 ```xml
 <Null name="Null"/>
 ```
 
-It can be useful in connection with an [arbiter](https://logging.apache.org/log4j/2.x/manual/configuration.html#arbiters), for 
+and can be useful in connection with an [arbiter](https://logging.apache.org/log4j/2.x/manual/configuration.html#arbiters), for 
 example like this:
+
+```xml
+<!-- 
+  Forwards logs to Dynatrace using the AsyncHttpAppender if the environment variable DYNATRACE_API_V2_LOGS_INGEST is 
+  present
+ -->
+<Appenders>
+    <Select>
+        <EnvironmentArbiter propertyName="DYNATRACE_API_V2_LOGS_INGEST">
+            <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
+                       maxBatchBytes="500000" maxBatchLogEvents="50000"
+                       httpSuccessCodes="200,204" httpRetryCodes="429,503"
+                       contentEncoding="gzip">
+                <!-- ... -->
+                <!-- ... -->
+                <!-- ... -->
+            </AsyncHttp>
+        </EnvironmentArbiter>
+        <DefaultArbiter>
+            <Null name="Dynatrace"/>
+        </DefaultArbiter>
+    </Select>
+</Appenders>
+<Loggers>
+  <Root level="info">
+      <AppenderRef ref="Console"/>
+      <AppenderRef ref="Dynatrace"/>
+  </Root>
+</Loggers>
+```
 
 
 
