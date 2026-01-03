@@ -210,8 +210,8 @@ or you are extremely sensitive about allocations.
 ### Async HttpAppender
 
 A high throughput asynchronous HTTP appender, that supports batching and compression. It can be used to publish logs to popular
-log monitoring solutions, like Dynatrace, Datadog and Grafana and is able to deliver considerable log volumes with very little
-overhead.
+log monitoring solutions, like [Dynatrace](#Publishing-Logs-To-Dynatrace), [Datadog](#Publishing-Logs-To-Datadog) and
+[Grafana](#Publishing-Logs-To-Grafana) and is able to deliver considerable log volumes with very little overhead.
 
 #### Overall Architecture
 
@@ -224,7 +224,7 @@ Logs are always appended to the current batch. If the batch is full, or `lingerM
 to the batch buffer. Buffered batches are drained in a FIFO manner, and pushed to the configured HTTP backend.
 
 Draining of the batch buffer happens asynchronously, and is accomplished by a single thead, that uses the asynchronous API
-of the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html)
+of the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html).
 
 #### What if the backend is not keeping up?
 
