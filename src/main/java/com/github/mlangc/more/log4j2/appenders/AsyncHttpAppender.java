@@ -39,6 +39,7 @@ import org.apache.logging.log4j.core.util.NanoClock;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.apache.logging.log4j.status.StatusLogger;
 
+import javax.annotation.concurrent.GuardedBy;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.Serializable;
@@ -91,15 +92,25 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final OverflowAppenderRef overflowAppenderRef;
 
     private final Set<FutureHolder> trackedFutures = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
     private final Lock lock = new ReentrantLock();
     private final Condition lockCondition;
+
     private final Semaphore allowedInFlight;
+
+    @GuardedBy("lock")
     private final List<byte[]> currentBatch = new ArrayList<>();
+    @GuardedBy("lock")
     private long currentBatchBytes;
+    @GuardedBy("lock")
     private final Deque<Batch> bufferedBatches;
+    @GuardedBy("lock")
     private long currentBufferBytes;
+    @GuardedBy("lock")
     private long firstRecordNanos;
+    @GuardedBy("lock")
     private ScheduledFuture<?> scheduledFlush;
+
     private AppenderControl overflowAppenderControl;
 
     private record Batch(byte[] data, long uncompressedBytes, int logEvents) {
@@ -333,7 +344,11 @@ public class AsyncHttpAppender extends AbstractAppender {
     @Override
     public void append(LogEvent event) {
         AppenderControl useOverflowAppenderControl = null;
+
+        // This might eventually be migrated to use `Encoder.encode`, but for the
+        // time being using byte arrays seems good enough.
         byte[] eventBytes = getLayout().toByteArray(event);
+
         lock.lock();
         try {
             var overflow = false;

@@ -251,13 +251,24 @@ events in this batch are lost. This will be accompanied by a warning being logge
 happens by configuring a custom `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` using the
 `batchCompletionListener` option for monitoring purposes.
 
-#### Attention
+#### Will I loose logs on shutdown?
 
 Depending on your setup you might want to set
 [log4j2.shutdownHookEnabled](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled)
 to true, to avoid loosing logs on regular shutdowns. `log4j2.shutdownHookEnabled` defaults to false if a `Servlet` class is found
 on your classpath (see
-[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)).
+[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how 
+long the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
+
+#### Will I loose logs if the application crashes?
+
+Yes, there is no way an asynchronous appender can make sure that buffers are drained if the application crashes. However, 
+there are some configuration options that have an influence on the amount of logs that might be lost:
+* Setting `lingerMs`, `maxBatchBytes` and `maxBatchLogEvents` to smaller values will push batches to the backend more quickly. The
+  downsides are more HTTP requests and potentially worse compression rates.
+* Setting `maxBatchBufferBatches` and `maxBatchBufferBytes` to smaller values will limit the amount of buffered batches, that
+  accumulate if the backend is not keeping up. On the other hand, a small batch buffer might not be able to absorb short spikes in
+  log volumes, or brief hickups of the backend.
 
 #### Performance
 
