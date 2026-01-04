@@ -275,9 +275,10 @@ there are some configuration options that have an influence on the amount of log
 In principle, the `AsyncHttpAppender` can sustain throughputs similar to a file appender, in the ballpark of millions of log
 events per second, if the configured HTTP backend is able to absorb the traffic fast enough.
 
-In tests that I performed with the ingest APIs of Dynatrace, Datadog and Grafana, I was able to sustain rates approaching 50_000
-log events per second corresponding to ~18MB/s of data from my laptop. Since compression ratios around 20 are quite common for
-logs, especially if they are enriched with constant attributes like hostnames, service names and so on, setting
+In tests that I performed (see `AsyncHttpAppenderNonJmhBenchmarks` if you are interested in the details) with the ingest APIs of
+Dynatrace, Datadog and Grafana, I was able to sustain rates approaching 50_000 log events per second corresponding to ~18MB/s of
+data from my laptop. Since compression ratios around 20 are quite common for logs, especially if they are enriched with constant
+attributes like hostnames, service names and so on, setting
 `contentEncoding="gzip"` is recommended, since this trades a small amount of CPU time for a significant reduction in network
 traffic.
 
