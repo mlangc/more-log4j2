@@ -896,9 +896,9 @@ public class AsyncHttpAppender extends AbstractAppender {
         trackedFutures.add(holder);
 
         try {
-            holder.future = lazyAsyncOp.get().whenComplete((ignore, e) -> {
+            holder.future = lazyAsyncOp.get().whenComplete((r, e) -> {
                 trackedFutures.remove(holder);
-                afterOp.accept(ignore, e);
+                afterOp.accept(r, e);
 
                 if (e != null) {
                     getStatusLogger().warn("Error running job {}", holder.jobName, e);
