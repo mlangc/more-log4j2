@@ -220,11 +220,14 @@ look at its overall architecture:
 
 ![AsyncHttpAppender Archtecture](/doc/diagrams/AsyncHttpAppenderArchitecture.png)
 
-Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed to the batch buffer.
-Buffered batches are drained in a FIFO manner, and pushed to the configured HTTP backend.
+Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed to the batch buffer, and
+a job to drain the buffer is scheduled. Buffered batches are handled in a FIFO manner, and pushed to the configured HTTP backend.
 
 Draining of the batch buffer happens asynchronously, and is accomplished by a single thead, that uses the asynchronous API of
 the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html).
+
+The purpose of the batch buffer is to absorb short log bursts, and backend hiccups. It is expected to be empty or almost empty
+under normal conditions.
 
 #### What if the backend is not keeping up?
 
@@ -257,13 +260,14 @@ Depending on your setup you might want to set
 [log4j2.shutdownHookEnabled](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled)
 to true, to avoid loosing logs on regular shutdowns. `log4j2.shutdownHookEnabled` defaults to false if a `Servlet` class is found
 on your classpath (see
-[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how 
-long the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
+[log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how long
+the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
 
 #### Will I loose logs if the application crashes?
 
-Yes, there is no way an asynchronous appender can make sure that buffers are drained if the application crashes. However, 
-there are some configuration options that have an influence on the amount of logs that might be lost:
+Yes, there is no way an asynchronous appender can make sure that buffers are drained if the application crashes. However, there
+are some configuration options that have an influence on the amount of logs that might be lost:
+
 * Setting `lingerMs`, `maxBatchBytes` and `maxBatchLogEvents` to smaller values will push batches to the backend more quickly. The
   downsides are more HTTP requests and potentially worse compression rates.
 * Setting `maxBatchBufferBatches` and `maxBatchBufferBytes` to smaller values will limit the amount of buffered batches, that
