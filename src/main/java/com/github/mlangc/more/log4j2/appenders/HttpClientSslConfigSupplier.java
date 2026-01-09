@@ -2,7 +2,7 @@
  * #%L
  * more-log4j2
  * %%
- * Copyright (C) 2025 Matthias Langer
+ * Copyright (C) 2025 - 2026 Matthias Langer
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,8 @@
  * limitations under the License.
  * #L%
  */
-package com.github.mlangc.more.log4j2.filters;
+package com.github.mlangc.more.log4j2.appenders;
 
-interface Ticker {
-    long currentTicks();
-
-    Ticker SYSTEM = System::nanoTime;
+public interface HttpClientSslConfigSupplier {
+    HttpClientSslConfig get() throws Exception;
 }

@@ -1,0 +1,16 @@
+{
+  "stream": {
+    "service": "test-app"
+  },
+  "values": [
+    [
+      {
+        "$resolver": "pattern",
+        "pattern": "%d{UNIX_MILLIS}000000"
+      }, {
+      "$resolver": "pattern",
+      "pattern": "%d{HH:mm:ss.SSS} %-5level %c{2} - %msg%n"
+    }
+    ]
+  ]
+}

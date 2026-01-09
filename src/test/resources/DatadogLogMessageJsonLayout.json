@@ -1,0 +1,6 @@
+{
+  "status": {
+    "$resolver": "level",
+    "field": "name"
+  }
+}

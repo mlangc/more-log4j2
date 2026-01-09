@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  #%L
+  more-log4j2
+  %%
+  Copyright (C) 2025 - 2026 Matthias Langer
+  %%
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+  
+       http://www.apache.org/licenses/LICENSE-2.0
+  
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+  #L%
+  -->
+
+<Configuration status="WARN">
+    <Properties>
+        <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
+    </Properties>
+    <Appenders>
+        <CountingAppender name="Count"/>
+
+        <AsyncHttp name="AsyncHttp" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
+                   batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
+                   httpSuccessCodes="200,204" httpRetryCodes="429,503"
+                   shutdownTimeoutMs="300000" maxBlockOnOverflowMs="1000">
+
+            <OverflowAppenderRef ref="Count"/>
+
+            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
+            <Property name="Content-Type" value="application/jsonl"/>
+            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <EventTemplateAdditionalField key="env" value="perf_test"/>
+                <EventTemplateAdditionalField key="source" value="${log4j:configLocation}"/>
+                <EventTemplateAdditionalField key="hostname" value="test"/>
+                <EventTemplateAdditionalField key="service" value="AsyncHttpAppender.perf_test"/>
+            </JsonTemplateLayout>
+        </AsyncHttp>
+
+        <Console name="Console">
+            <PatternLayout pattern="${pattern}"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="AsyncHttp"/>
+
+            <AppenderRef ref="Console">
+                <BurstFilter rate="0.1" maxBurst="3"/>
+            </AppenderRef>
+        </Root>
+    </Loggers>
+</Configuration>
+

@@ -2,7 +2,7 @@
  * #%L
  * more-log4j2
  * %%
- * Copyright (C) 2025 Matthias Langer
+ * Copyright (C) 2025 - 2026 Matthias Langer
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.core.filter.AbstractFilter;
+import org.apache.logging.log4j.core.util.NanoClock;
 import org.apache.logging.log4j.message.Message;
 import org.apache.logging.log4j.util.PerformanceSensitive;
 
@@ -44,27 +45,27 @@ public class ThrottlingFilter extends AbstractFilter {
     private final Level level;
     private final long intervalNanos;
     private final long maxEvents;
-    private final Ticker ticker;
+    private final NanoClock nanoClock;
 
     private final AtomicLong startTicks;
     private final AtomicLong eventCounter;
 
     ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEvents) {
-        this(onMatch, onMismatch, level, intervalNanos, maxEvents, Ticker.SYSTEM);
+        this(onMatch, onMismatch, level, intervalNanos, maxEvents, System::nanoTime);
     }
 
-    ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEventsPerInterval, Ticker ticker) {
+    ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEventsPerInterval, NanoClock nanoClock) {
         super(onMatch, onMismatch);
 
         this.level = level;
         this.intervalNanos = intervalNanos;
         this.maxEvents = maxEventsPerInterval;
-        this.ticker = ticker;
+        this.nanoClock = nanoClock;
         this.eventCounter = new AtomicLong();
 
         // Note: We could just initialize `startTicks` with `ticker.currentTicks()`, however, aligning intervals along multiples
         // of `intervalNanos` makes the behaviour of the filter more predictable for tests.
-        this.startTicks = new AtomicLong(Math.floorDiv(ticker.currentTicks(), intervalNanos) * intervalNanos);
+        this.startTicks = new AtomicLong(Math.floorDiv(nanoClock.nanoTime(), intervalNanos) * intervalNanos);
     }
 
     @Override
@@ -164,7 +165,7 @@ public class ThrottlingFilter extends AbstractFilter {
             return onMatch;
         }
 
-        long t = ticker.currentTicks();
+        long t = nanoClock.nanoTime();
         while (true) {
             long t0 = startTicks.get();
             if (t0 + intervalNanos > t) {

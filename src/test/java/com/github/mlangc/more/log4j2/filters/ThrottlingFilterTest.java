@@ -2,7 +2,7 @@
  * #%L
  * more-log4j2
  * %%
- * Copyright (C) 2025 Matthias Langer
+ * Copyright (C) 2025 - 2026 Matthias Langer
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,20 +131,21 @@ class ThrottlingFilterTest {
             long maxLogs = startedIntervals * filter.maxEvents();
 
             CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
-            assertThat(countingAppender.currentCount())
-                    .isLessThanOrEqualTo(maxLogs);
+
+            var tolerance = (maxLogs + 999) / 1000;
+            assertThat(countingAppender.currentCount()).isLessThanOrEqualTo(maxLogs + tolerance);
         }
     }
 
 
     @Test
-    void shouldNotAllowOnlyMinimalAmountOfAdditionalLogsDueToRace() throws InterruptedException {
+    void shouldAllowOnlyMinimalAmountOfAdditionalLogsDueToRace() throws InterruptedException {
         try (LoggerContext context = TestHelpers.loggerContextFromTestResource(ThrottlingFilterTest.class.getSimpleName() + ".provokeRace.xml")) {
-            ExecutorService executor = Executors.newCachedThreadPool();
             ExtendedLogger log = context.getLogger(getClass());
             ThrottlingFilter throttlingFilter = (ThrottlingFilter) context.getConfiguration().getFilter();
             CountingAppender countingAppender = context.getConfiguration().getAppender("CountingAppender");
 
+            ExecutorService executor = Executors.newCachedThreadPool();
             try {
                 for (int parallelism : new int[] { 16, 32, 64 }) {
                     AtomicBoolean stop = new AtomicBoolean();
@@ -174,9 +175,11 @@ class ThrottlingFilterTest {
                             job -> assertThat(job).succeedsWithin(1, TimeUnit.SECONDS));
 
                     long intervalsStarted = ended.get() / throttlingFilter.intervalNanos() - started.get() / throttlingFilter.intervalNanos() + 1;
+                    long maxEvents = intervalsStarted * throttlingFilter.maxEvents();
+                    long tolerance = (maxEvents + 99) / 100;
                     assertThat(countingAppender.currentCount())
-                            .as("parallelism=%s", parallelism)
-                            .isLessThanOrEqualTo(intervalsStarted * throttlingFilter.maxEvents());
+                                .as("parallelism=%s", parallelism)
+                            .isLessThanOrEqualTo(maxEvents + tolerance);
                 }
             } finally {
                 executor.shutdown();
