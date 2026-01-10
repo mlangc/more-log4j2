@@ -274,6 +274,17 @@ are some configuration options that have an influence on the amount of logs that
   accumulate if the backend is not keeping up. On the other hand, a small batch buffer might not be able to absorb short spikes in
   log volumes, or brief hickups of the backend.
 
+However, if you are worrying about lost logs in the event of an application crash, `AsyncHttpAppender` is probably [not the 
+right tool for your use case](#should-i-use-the-asynchttpappender-in-production).
+
+#### Should I use the AsyncHttpAppender in production?
+
+Most likely not, since ingesting logs from within the logging application itself has some drawbacks, that even the best possible
+appender implementation cannot mitigate. Log aggregation and forwarding in production like setups is typically addressed by
+dedicated components, that collect, enrich, aggregate and forward logs from multiple applications.
+
+However, setting up this kind of infrastructure on your local machine is overkill, and might not be possible.
+
 #### Performance
 
 In principle, the `AsyncHttpAppender` can sustain throughputs similar to a file appender, in the ballpark of millions of log
