@@ -22,10 +22,12 @@
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
         </Console>
+        <Captor name="Captor"/>
     </Appenders>
     <Loggers>
         <Root level="info">
             <AppenderRef ref="Console" />
+            <AppenderRef ref="Captor"/>
         </Root>
     </Loggers>
 </Configuration>
