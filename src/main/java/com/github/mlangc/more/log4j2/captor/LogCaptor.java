@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -60,6 +60,10 @@ public class LogCaptor implements AutoCloseable {
         return capturingAppenders.get(0);
     }
 
+	public static LogCaptor forName(String loggerName) {
+		return new LogCaptor(loggerName);
+	}
+
     public static LogCaptor forClass(Class<?> clazz) {
         return new LogCaptor(clazz.getCanonicalName());
     }
@@ -75,6 +79,10 @@ public class LogCaptor implements AutoCloseable {
     public List<String> getWarnLogs() {
         return getLogs(Level.WARN);
     }
+
+	public List<String> getErrorLogs() {
+		return getLogs(Level.ERROR);
+	}
 
     public List<String> getLogs(Level level) {
         return streamLogs()
