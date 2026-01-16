@@ -1164,6 +1164,34 @@ class AsyncHttpAppenderTest {
         wireMockExt.verify(logLines, postRequestedFor(urlEqualTo(wireMockPath)));
     }
 
+    @Test
+    void forceFlushAndAwaitShouldWorkReliably() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(10)));
+
+        final var maxBatchLogEvents = 5;
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("maxBatchLogEvents", maxBatchLogEvents)
+                        .addAttribute("url", wireMockHttpUrl)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder))  {
+            var log = context.getLogger(getClass());
+            var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
+            assertThat(appender.forceFlushAndAwaitTillPushed()).succeedsWithin(500, TimeUnit.MILLISECONDS);
+
+            var numLogs = maxBatchLogEvents * 10 + 1;
+            for (int i = 0; i < numLogs; i++) {
+                log.info("test");
+            }
+
+            assertThat(appender.forceFlushAndAwaitTillPushed()).succeedsWithin(500, TimeUnit.MILLISECONDS);
+            assertThat(collectReceivedLinesPerStatusCode(wireMockPath).get(200)).containsExactly(Map.entry("test", numLogs));
+        }
+    }
+
     private void shouldPush3shortLogs(LoggerContext context) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 

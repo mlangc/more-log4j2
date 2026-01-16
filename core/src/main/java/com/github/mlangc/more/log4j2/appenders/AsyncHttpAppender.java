@@ -110,10 +110,16 @@ public class AsyncHttpAppender extends AbstractAppender {
     private long firstRecordNanos;
     @GuardedBy("lock")
     private ScheduledFuture<?> scheduledFlush;
+    @GuardedBy("lock")
+    private long nextBatchId;
+    @GuardedBy("lock")
+    private final Set<Long> pendingBatches = new HashSet<>();
+    @GuardedBy("lock")
+    private final Collection<PendingBatchesAwaitingFuture> pendingBatchesAwaitingFutures = new LinkedList<>();
 
     private AppenderControl overflowAppenderControl;
 
-    private record Batch(byte[] data, long uncompressedBytes, int logEvents) {
+    private record Batch(long id, byte[] data, long uncompressedBytes, int logEvents) {
         int effectiveBytes() {
             return data.length;
         }
@@ -451,7 +457,8 @@ public class AsyncHttpAppender extends AbstractAppender {
         if ((batchSize + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) && bufferedBatches.size() < maxBatchBufferBatches) {
             // Implementation note: Creating a batch can be a relatively expensive operation, especially if compression is enabled.
             // It might therefore be preferable to release the lock before doing so, at least under specific conditions.
-            Batch batch = createBatch(currentBatch, batchSize);
+            Batch batch = createBatchAssumingLocked(currentBatch, batchSize);
+            pendingBatches.add(batch.id);
             currentBufferBytes += batch.effectiveBytes();
             bufferedBatches.addLast(batch);
             runAsyncTracked("drainBufferedBatches", () -> drainBufferedBatches(lingerNs / 20), () -> { });
@@ -481,6 +488,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                 bufferedBatches.removeFirst();
                 int releaseBytes = oldestBatch.data.length;
+                long batchId = oldestBatch.id;
                 long uncompressedBytes = oldestBatch.uncompressedBytes();
                 int logEvents = oldestBatch.logEvents();
 
@@ -495,6 +503,9 @@ public class AsyncHttpAppender extends AbstractAppender {
                             lock.lock();
                             try {
                                 currentBufferBytes -= releaseBytes;
+                                pendingBatches.remove(batchId);
+                                pendingBatchesAwaitingFutures.removeIf(f -> f.onBatchCompleted(batchId));
+
                                 bufferBytesSnapshot = currentBufferBytes;
                                 bufferedBatchesSnapshot = bufferedBatches.size();
 
@@ -563,6 +574,26 @@ public class AsyncHttpAppender extends AbstractAppender {
             return baseClass.cast(clazz.getDeclaredConstructor().newInstance());
         } catch (Exception e) {
             throw new IllegalArgumentException("Cannot load" + baseClass.getSimpleName() + " implementation from '" + className + "'", e);
+        }
+    }
+
+    private static class PendingBatchesAwaitingFuture extends CompletableFuture<Void> {
+        private final Set<Long> pendingBatches;
+
+        PendingBatchesAwaitingFuture(Set<Long> pendingBatches) {
+            this.pendingBatches = pendingBatches;
+
+            if (this.pendingBatches.isEmpty()) {
+                complete(null);
+            }
+        }
+
+        boolean onBatchCompleted(long id) {
+            if (pendingBatches.remove(id) && pendingBatches.isEmpty()) {
+                complete(null);
+            }
+
+            return isDone();
         }
     }
 
@@ -755,7 +786,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return batchSize;
     }
 
-    private Batch createBatch(List<byte[]> events, int batchSize) {
+    private Batch createBatchAssumingLocked(List<byte[]> events, int batchSize) {
         byte[] res = new byte[batchSize];
         System.arraycopy(batchPrefix, 0, res, 0, batchPrefix.length);
 
@@ -789,7 +820,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
         }
 
-        return new Batch(res, uncompressedBytes, events.size());
+        return new Batch(nextBatchId++, res, uncompressedBytes, events.size());
     }
 
     @Override
@@ -855,11 +886,26 @@ public class AsyncHttpAppender extends AbstractAppender {
         return stoppedCleanly;
     }
 
-	public CompletableFuture<Void> flushAndAwait() {
-		doWithLock(this::tryFlushAssumingLocked);
+	public CompletableFuture<Void> forceFlushAndAwaitTillPushed() {
+        lock.lock();
+        try {
+            tryFlushAssumingLocked();
+            var currentlyPending = new HashSet<>(pendingBatches);
 
-		return CompletableFuture.allOf(currentlyTrackedFutures())
-				.thenCompose(ignore -> CompletableFuture.allOf(currentlyTrackedFutures()));
+            if (!currentBatch.isEmpty()) {
+                // Should only happen if flushing failed because the buffer is full
+                currentlyPending.add(nextBatchId);
+            }
+
+            var future = new PendingBatchesAwaitingFuture(currentlyPending);
+            if (!future.isDone()) {
+                pendingBatchesAwaitingFutures.add(future);
+            }
+
+            return future;
+        } finally {
+            lock.unlock();
+        }
 	}
 
     private CompletableFuture<?>[] currentlyTrackedFutures() {

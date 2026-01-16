@@ -64,7 +64,7 @@ public class AsyncHttpAppenderFlushingTestExecutionListener implements TestExecu
         LoggerContext.getContext(false).getConfiguration().getAppenders().values().forEach(appender -> {
             if (appender instanceof AsyncHttpAppender asyncHttpAppender) {
                 try {
-                    asyncHttpAppender.flushAndAwait().orTimeout(timeoutMs, TimeUnit.MILLISECONDS).join();
+                    asyncHttpAppender.forceFlushAndAwaitTillPushed().orTimeout(timeoutMs, TimeUnit.MILLISECONDS).join();
                 } catch (Exception e) {
                     StatusLogger.getLogger().error("Error flushing logs of {}", asyncHttpAppender, e);
                 }
