@@ -855,6 +855,13 @@ public class AsyncHttpAppender extends AbstractAppender {
         return stoppedCleanly;
     }
 
+	public CompletableFuture<Void> forceFlush() {
+		doWithLock(this::tryFlushAssumingLocked);
+
+		return CompletableFuture.allOf(currentlyTrackedFutures())
+				.thenCompose(ignore -> CompletableFuture.allOf(currentlyTrackedFutures()));
+	}
+
     private CompletableFuture<?>[] currentlyTrackedFutures() {
         var currentlyTracked = new ArrayList<CompletableFuture<?>>();
         for (var trackedFuture : trackedFutures) {
