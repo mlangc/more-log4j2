@@ -1,0 +1,36 @@
+<Configuration status="WARN">
+    <Properties>
+        <Property name="pattern" value="%d{HH:mm:ss.SSS} %-5level %logger{1} - %msg%n"/>
+    </Properties>
+    <Appenders>
+        <AsyncHttp name="Dynatrace" url="${env:DYNATRACE_API_V2_LOGS_INGEST}"
+                   maxBatchBytes="500000" maxBatchLogEvents="50000"
+                   httpSuccessCodes="200,204" httpRetryCodes="429,503"
+                   contentEncoding="gzip">
+            <Property name="Authorization" value="Api-Token ${env:DYNATRACE_API_TOKEN}"/>
+            <Property name="Content-Type" value="application/jsonl"/>
+
+            <JsonTemplateLayout eventTemplateUri="classpath:DynatraceLogMessageJsonLayout.json">
+                <EventTemplateAdditionalField
+                        key="message"
+                        format="JSON"
+                        value='{"$resolver": "pattern", "pattern": "${pattern}"}'/>
+
+                <EventTemplateAdditionalField key="dt.os.type" value="${java:os}"/>
+                <EventTemplateAdditionalField key="java.runtime" value="${java:runtime}"/>
+                <EventTemplateAdditionalField key="log4j.configLocation" value="${log4j:configLocation}"/>
+            </JsonTemplateLayout>
+        </AsyncHttp>
+
+        <Console name="Console">
+            <PatternLayout pattern="${pattern}"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <!-- This will push logs to Dynatrace and to the console -->
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Dynatrace"/>
+        </Root>
+    </Loggers>
+</Configuration>

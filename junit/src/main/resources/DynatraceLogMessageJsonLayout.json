@@ -1,0 +1,13 @@
+{
+  "timestamp": {
+    "$resolver": "timestamp",
+    "epoch": {
+      "unit": "millis",
+      "rounded": true
+    }
+  },
+  "level": {
+    "$resolver": "level",
+    "field": "name"
+  }
+}

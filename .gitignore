@@ -13,3 +13,4 @@ pom.xml.tag
 *.jfr
 *.log
 *.bkp
+.DS_Store
