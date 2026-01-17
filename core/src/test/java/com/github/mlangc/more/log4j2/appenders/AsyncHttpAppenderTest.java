@@ -1169,27 +1169,44 @@ class AsyncHttpAppenderTest {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(10)));
 
         final var maxBatchLogEvents = 5;
+        final var numLogs = maxBatchLogEvents * 5 + 1;
+
         var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         configBuilder = configBuilder
+                .setStatusLevel(Level.WARN)
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("maxBatchLogEvents", maxBatchLogEvents)
+                        .addAttribute("lingerMs", Integer.MAX_VALUE)
                         .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
         try (var context = TestHelpers.loggerContextFromConfig(configBuilder))  {
             var log = context.getLogger(getClass());
             var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
+            var batchCompletionListener = (TestBatchCompletionListener) appender.batchCompletionListener();
             assertThat(appender.forceFlushAndAwaitTillPushed()).succeedsWithin(500, TimeUnit.MILLISECONDS);
 
-            var numLogs = maxBatchLogEvents * 10 + 1;
             for (int i = 0; i < numLogs; i++) {
                 log.info("test");
             }
 
             assertThat(appender.forceFlushAndAwaitTillPushed()).succeedsWithin(500, TimeUnit.MILLISECONDS);
-            assertThat(collectReceivedLinesPerStatusCode(wireMockPath).get(200)).containsExactly(Map.entry("test", numLogs));
+
+            Supplier<String> formattedBatchCompletionEvents = () -> {
+                var completionEvents = batchCompletionListener.getLastBatchCompletionEvents();
+
+                return String.format(Locale.ROOT, "numCompletionEvents=%s, completionEvents:%n%s",
+                        completionEvents.size(),
+                        completionEvents.stream().map(Objects::toString).collect(Collectors.joining("\n\t", "\t", "")));
+            };
+            
+            assertThat(collectReceivedLinesPerStatusCode(wireMockPath).get(200))
+                    .as(formattedBatchCompletionEvents)
+                    .containsExactly(Map.entry("test", numLogs));
         }
+
     }
 
     private void shouldPush3shortLogs(LoggerContext context) {

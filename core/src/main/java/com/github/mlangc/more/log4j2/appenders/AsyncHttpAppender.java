@@ -19,7 +19,6 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-import com.github.mlangc.more.log4j2.appenders.HttpRetryManager.HttpStatusAndStats;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.core.Appender;
@@ -56,7 +55,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.zip.GZIPOutputStream;
 
@@ -69,6 +67,8 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final URI url;
     private final int maxBatchBytes;
     private final long lingerNs;
+    private final long maxDrainBufferBackoffNs0;
+    private final long maxDrainBufferBackoffNs1;
     private final int maxConcurrentRequests;
     private final int maxBatchLogEvents;
     private final int maxBatchBufferBytes;
@@ -91,8 +91,6 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final int maxBatchBufferBatches;
     private final OverflowAppenderRef overflowAppenderRef;
 
-    private final Set<FutureHolder> trackedFutures = Collections.newSetFromMap(new ConcurrentHashMap<>());
-
     private final Lock lock = new ReentrantLock();
     private final Condition lockCondition;
 
@@ -113,7 +111,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     @GuardedBy("lock")
     private long nextBatchId;
     @GuardedBy("lock")
-    private final Set<Long> pendingBatches = new HashSet<>();
+    private final Set<Long> pendingBatchIds = new HashSet<>();
     @GuardedBy("lock")
     private final Collection<PendingBatchesAwaitingFuture> pendingBatchesAwaitingFutures = new LinkedList<>();
 
@@ -214,6 +212,12 @@ public class AsyncHttpAppender extends AbstractAppender {
         this.maxBatchBytes = maxBatchBytes;
         this.maxBatchBufferBytes = maxBatchBufferBytes;
         this.lingerNs = TimeUnit.MILLISECONDS.toNanos(lingerMs);
+
+        this.maxDrainBufferBackoffNs0 = Math.max(
+                1, min(TimeUnit.MILLISECONDS.toNanos(5), lingerNs / 20, TimeUnit.MILLISECONDS.toNanos(shutdownTimeoutMs) / 20));
+
+        this.maxDrainBufferBackoffNs1 = Math.max(maxDrainBufferBackoffNs0, TimeUnit.SECONDS.toNanos(5));
+
         this.maxConcurrentRequests = maxConcurrentRequests;
         this.allowedInFlight = new Semaphore(maxConcurrentRequests);
         this.maxBatchLogEvents = maxBatchLogEvents;
@@ -251,6 +255,10 @@ public class AsyncHttpAppender extends AbstractAppender {
         } else {
             lockCondition = null;
         }
+    }
+
+    private static long min(long a, long b, long c) {
+        return Math.min(Math.min(a, b), c);
     }
 
     @Override
@@ -458,10 +466,10 @@ public class AsyncHttpAppender extends AbstractAppender {
             // Implementation note: Creating a batch can be a relatively expensive operation, especially if compression is enabled.
             // It might therefore be preferable to release the lock before doing so, at least under specific conditions.
             Batch batch = createBatchAssumingLocked(currentBatch, batchSize);
-            pendingBatches.add(batch.id);
             currentBufferBytes += batch.effectiveBytes();
             bufferedBatches.addLast(batch);
-            runAsyncTracked("drainBufferedBatches", () -> drainBufferedBatches(lingerNs / 20), () -> { });
+            pendingBatchIds.add(batch.id);
+            executor().execute(() -> drainBufferedBatches(maxDrainBufferBackoffNs0));
             currentBatch.clear();
             currentBatchBytes = 0;
             return true;
@@ -480,9 +488,9 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                 if (!allowedInFlight.tryAcquire()) {
                     var backoffNs = ThreadLocalRandom.current().nextLong(maxBackoffNs + 1);
-                    var newMaxBackoffNs = Math.min(lingerNs, maxBackoffNs * 2);
+                    var newMaxBackoffNs = Math.min(maxDrainBufferBackoffNs1, maxBackoffNs * 2);
                     executor().schedule(() -> drainBufferedBatches(newMaxBackoffNs), backoffNs, TimeUnit.NANOSECONDS);
-                    getStatusLogger().debug("Too many request in flight; trying later");
+                    getStatusLogger().debug("Too many request in flight; retrying in {}ns", backoffNs);
                     break;
                 }
 
@@ -492,54 +500,51 @@ public class AsyncHttpAppender extends AbstractAppender {
                 long uncompressedBytes = oldestBatch.uncompressedBytes();
                 int logEvents = oldestBatch.logEvents();
 
-                runAsyncTracked(
-                        "sendBatchBytes",
-                        (Supplier<CompletableFuture<HttpStatusAndStats>>) () -> retryManager.run(() -> sendBatch(oldestBatch)),
-                        (response, throwable) -> {
-                            allowedInFlight.release();
+                retryManager.run(() -> sendBatch(oldestBatch)).whenComplete((response, throwable) -> {
+                    allowedInFlight.release();
 
-                            long bufferBytesSnapshot;
-                            int bufferedBatchesSnapshot;
-                            lock.lock();
-                            try {
-                                currentBufferBytes -= releaseBytes;
-                                pendingBatches.remove(batchId);
-                                pendingBatchesAwaitingFutures.removeIf(f -> f.onBatchCompleted(batchId));
+                    long bufferBytesSnapshot;
+                    int bufferedBatchesSnapshot;
+                    lock.lock();
+                    try {
+                        currentBufferBytes -= releaseBytes;
+                        pendingBatchIds.remove(batchId);
+                        pendingBatchesAwaitingFutures.removeIf(f -> f.onBatchCompletedAssumingLocked(batchId));
 
-                                bufferBytesSnapshot = currentBufferBytes;
-                                bufferedBatchesSnapshot = bufferedBatches.size();
+                        bufferBytesSnapshot = currentBufferBytes;
+                        bufferedBatchesSnapshot = bufferedBatches.size();
 
-                                if (lockCondition != null) {
-                                    lockCondition.signalAll();
-                                }
-                            } finally {
-                                lock.unlock();
-                            }
+                        if (lockCondition != null) {
+                            lockCondition.signalAll();
+                        }
+                    } finally {
+                        lock.unlock();
+                    }
 
-                            BatchCompletionType completionType = null;
-                            RetryStats retryStats = null;
-                            if (response != null) {
-                                completionType = new BatchDeliveredSuccess(response.status());
-                                retryStats = response.stats();
-                            } else if (throwable instanceof HttpErrorResponseException errorResponseException) {
-                                completionType = new BatchDeliveredError(errorResponseException.httpStatus());
-                                retryStats = errorResponseException.stats();
-                            } else if (throwable instanceof HttpRetryManagerException retryManagerException) {
-                                completionType = new BatchDeliveryFailed(retryManagerException);
-                                retryStats = retryManagerException.stats();
-                            } else if (throwable instanceof Exception exception) {
-                                completionType = new BatchDeliveryFailed(exception);
-                                retryStats = new RetryStats(-1, -1, -1, -1);
-                            }
+                    BatchCompletionType completionType = null;
+                    RetryStats retryStats = null;
+                    if (response != null) {
+                        completionType = new BatchDeliveredSuccess(response.status());
+                        retryStats = response.stats();
+                    } else if (throwable instanceof HttpErrorResponseException errorResponseException) {
+                        completionType = new BatchDeliveredError(errorResponseException.httpStatus());
+                        retryStats = errorResponseException.stats();
+                    } else if (throwable instanceof HttpRetryManagerException retryManagerException) {
+                        completionType = new BatchDeliveryFailed(retryManagerException);
+                        retryStats = retryManagerException.stats();
+                    } else if (throwable instanceof Exception exception) {
+                        completionType = new BatchDeliveryFailed(exception);
+                        retryStats = new RetryStats(-1, -1, -1, -1);
+                    }
 
-                            if (completionType != null) {
-                                batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
-                                        this,
-                                        new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot,
-                                                retryStats.tries(), retryStats.backoffNanos(), retryStats.requestNanos(), retryStats.totalNanos()),
-                                        completionType));
-                            }
-                        });
+                    if (completionType != null) {
+                        batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
+                                this,
+                                new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot,
+                                        retryStats.tries(), retryStats.backoffNanos(), retryStats.requestNanos(), retryStats.totalNanos()),
+                                completionType));
+                    }
+                });
             }
         });
     }
@@ -577,23 +582,42 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
     }
 
-    private static class PendingBatchesAwaitingFuture extends CompletableFuture<Void> {
-        private final Set<Long> pendingBatches;
+    private class PendingBatchesAwaitingFuture extends CompletableFuture<Void> {
+        private final Set<Long> pendingIds;
+        private Long unflushedId;
 
-        PendingBatchesAwaitingFuture(Set<Long> pendingBatches) {
-            this.pendingBatches = pendingBatches;
+        PendingBatchesAwaitingFuture(Set<Long> pendingIds, Long unflushedId) {
+            this.pendingIds = pendingIds;
+            this.unflushedId = unflushedId;
 
-            if (this.pendingBatches.isEmpty()) {
+            if (pendingIds.isEmpty() && unflushedId == null) {
                 complete(null);
             }
         }
 
-        boolean onBatchCompleted(long id) {
-            if (pendingBatches.remove(id) && pendingBatches.isEmpty()) {
+        boolean onBatchCompletedAssumingLocked(long id) {
+            if (unflushedId != null && unflushedId == id) {
+                unflushedId = null;
+                if (pendingIds.isEmpty()) {
+                    complete(null);
+                }
+            } else if (pendingIds.remove(id) && pendingIds.isEmpty() && unflushedId == null) {
                 complete(null);
             }
 
+            if (unflushedId != null && nextBatchId == unflushedId) {
+                tryFlushAssumingLocked();
+            }
+
             return isDone();
+        }
+
+        @Override
+        public String toString() {
+            return "PendingBatchesAwaitingFuture{" +
+                   "pendingIds=" + pendingIds +
+                   ", unflushedId=" + unflushedId +
+                   '}';
         }
     }
 
@@ -836,8 +860,6 @@ public class AsyncHttpAppender extends AbstractAppender {
                 scheduledFlush.cancel(false);
                 scheduledFlush = null;
             }
-
-            tryFlushAssumingLocked();
         });
 
         var stoppedCleanly = true;
@@ -854,8 +876,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             while (remainingNanos > 0 && hasUnpublishedLogData()) {
                 var t0 = ticker.nanoTime();
 
-                doWithLock(this::tryFlushAssumingLocked);
-                CompletableFuture.allOf(currentlyTrackedFutures())
+                forceFlushAndAwaitTillPushed()
                         .exceptionally(ignore -> null) // <-- we only care about the future terminating at all.
                         .get(remainingNanos, TimeUnit.NANOSECONDS);
 
@@ -867,6 +888,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 Thread.currentThread().interrupt();
             }
 
+            getStatusLogger().warn("Error stopping {} cleanly", this, e);
             stoppedCleanly = false;
         } finally {
             // Without this, retries might be kept enabled in the case where we scheduled disableRetries above, but shutdown the executor before the schedule runs below.
@@ -886,38 +908,24 @@ public class AsyncHttpAppender extends AbstractAppender {
         return stoppedCleanly;
     }
 
-	public CompletableFuture<Void> forceFlushAndAwaitTillPushed() {
+    public CompletableFuture<Void> forceFlushAndAwaitTillPushed() {
         lock.lock();
         try {
-            tryFlushAssumingLocked();
-            var currentlyPending = new HashSet<>(pendingBatches);
-
-            if (!currentBatch.isEmpty()) {
-                // Should only happen if flushing failed because the buffer is full
-                currentlyPending.add(nextBatchId);
+            Long unflushedId = null;
+            if (!tryFlushAssumingLocked() && !currentBatch.isEmpty()) {
+                unflushedId = nextBatchId;
             }
 
-            var future = new PendingBatchesAwaitingFuture(currentlyPending);
+            var future = new PendingBatchesAwaitingFuture(new HashSet<>(pendingBatchIds), unflushedId);
             if (!future.isDone()) {
                 pendingBatchesAwaitingFutures.add(future);
+                getStatusLogger().debug("Waiting for pending batches: {}", future);
             }
 
             return future;
         } finally {
             lock.unlock();
         }
-	}
-
-    private CompletableFuture<?>[] currentlyTrackedFutures() {
-        var currentlyTracked = new ArrayList<CompletableFuture<?>>();
-        for (var trackedFuture : trackedFutures) {
-            var future = trackedFuture.future;
-            if (future != null) {
-                currentlyTracked.add(future);
-            }
-        }
-
-        return currentlyTracked.toArray(CompletableFuture<?>[]::new);
     }
 
     private ScheduledThreadPoolExecutor executor() {
@@ -942,34 +950,6 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     boolean retryOnIoError() {
         return retryOnIoError;
-    }
-
-    private <T> void runAsyncTracked(String jobName, Supplier<CompletableFuture<T>> lazyAsyncOp, BiConsumer<T, Throwable> afterOp) {
-        FutureHolder holder = new FutureHolder(jobName);
-        trackedFutures.add(holder);
-
-        try {
-            holder.future = lazyAsyncOp.get().whenComplete((r, e) -> {
-                trackedFutures.remove(holder);
-                afterOp.accept(r, e);
-
-                if (e != null) {
-                    getStatusLogger().warn("Error running job {}", holder.jobName, e);
-                }
-            });
-        } catch (Exception e) {
-            trackedFutures.remove(holder);
-            afterOp.accept(null, e);
-            getStatusLogger().error("Error submitting job {} to executor {}", holder.jobName, executor(), e);
-        }
-    }
-
-    private void runAsyncTracked(String jobName, Runnable op, BiConsumer<Void, Throwable> afterOp) {
-        runAsyncTracked(jobName, (Supplier<CompletableFuture<Void>>) () -> CompletableFuture.runAsync(op, executor()), afterOp);
-    }
-
-    private void runAsyncTracked(String jobName, Runnable op, Runnable afterOp) {
-        runAsyncTracked(jobName, op, (ignore1, ignore2) -> afterOp.run());
     }
 
     private boolean isSeparatorNeeded(byte[] left, byte[] right) {
