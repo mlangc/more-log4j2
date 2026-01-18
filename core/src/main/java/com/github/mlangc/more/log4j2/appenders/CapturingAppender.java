@@ -19,7 +19,6 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
@@ -30,25 +29,31 @@ import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.core.config.plugins.validation.constraints.Required;
 
-import java.util.Collection;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.WeakHashMap;
 
 @Plugin(name = "Captor", category = Node.CATEGORY, elementType = Appender.ELEMENT_TYPE, printObject = true)
 public class CapturingAppender extends AbstractAppender {
-    private final Deque<LogEvent> capturedLogEvents = new ConcurrentLinkedDeque<>();
-    private final Set<String> monitoredLoggers = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<LogEventConsumer> consumers = Collections.newSetFromMap(new WeakHashMap<>());
 
     protected CapturingAppender(String name) {
+        // TODO: Filter support
         super(name, null, null, true, Property.EMPTY_ARRAY);
     }
 
     @Override
-    public void append(LogEvent event) {
-        capturedLogEvents.add(event.toImmutable());
+    public synchronized void append(LogEvent event) {
+        LogEvent immutableEvent = null;
+        for (var consumer : consumers) {
+            if (consumer.isInterested(event)) {
+                if (immutableEvent == null) {
+                    immutableEvent = event.toImmutable();
+                }
+
+                consumer.consume(immutableEvent);
+            }
+        }
     }
 
     @PluginFactory
@@ -56,21 +61,16 @@ public class CapturingAppender extends AbstractAppender {
         return new CapturingAppender(name);
     }
 
-    public Collection<LogEvent> capturedLogEvents() {
-        return Collections.unmodifiableCollection(capturedLogEvents);
+    public interface LogEventConsumer {
+        boolean isInterested(LogEvent event);
+        void consume(LogEvent event);
     }
 
-    public void startMonitoringLogger(Logger logger) {
-        monitoredLoggers.add(logger.getName());
+    public synchronized void registerConsumer(LogEventConsumer consumer) {
+        consumers.add(consumer);
     }
 
-    public void stopMonitoringLogger(Logger logger) {
-        if (monitoredLoggers.remove(logger.getName())) {
-            clearLogs(logger);
-        }
-    }
-
-    public void clearLogs(Logger logger) {
-        capturedLogEvents.removeIf(evt -> logger.getName().equals(evt.getLoggerName()));
+    public synchronized void unregisterConsumer(LogEventConsumer consumer) {
+        consumers.remove(consumer);
     }
 }

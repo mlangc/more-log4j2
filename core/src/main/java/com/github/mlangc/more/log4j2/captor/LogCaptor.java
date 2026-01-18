@@ -29,18 +29,46 @@ import org.apache.logging.log4j.core.config.Configurator;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
+import java.util.function.Consumer;
+
+import static com.github.mlangc.more.log4j2.internal.util.LoggerNameUtil.isNameEqualOrAncestorOf;
 
 public class LogCaptor implements AutoCloseable {
     private final CapturingAppender capturingAppender;
-    private final Logger logger;
-    private final Level originalLevel;
+    private final ArrayList<LogEvent> capturedEvents = new ArrayList<>();
 
-    private LogCaptor(String loggerName) {
+    private final Logger logger;
+    private final Logger altLogger;
+    private final Level originalLevel;
+    private final CapturingAppender.LogEventConsumer logsConsumer;
+
+    private LogCaptor(String loggerName, String altLoggerName) {
         this.logger = LogManager.getLogger(loggerName);
+        this.altLogger = (altLoggerName != null && !loggerName.equals(altLoggerName)) ? LogManager.getLogger(altLoggerName) : null;
         this.capturingAppender = getCapturingAppender();
         this.originalLevel = LogManager.getLogger(loggerName).getLevel();
-        capturingAppender.startMonitoringLogger(logger);
+
+        this.logsConsumer = new CapturingAppender.LogEventConsumer() {
+            @Override
+            public boolean isInterested(LogEvent event) {
+                if (isNameEqualOrAncestorOf(logger.getName(), event.getLoggerName())) {
+                    return true;
+                }
+
+                if (altLogger != null && isNameEqualOrAncestorOf(altLogger.getName(), event.getLoggerName())) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            @Override
+            public void consume(LogEvent event) {
+                synchronized (LogCaptor.this) {
+                    capturedEvents.add(event);
+                }
+            }
+        };
     }
 
     private static CapturingAppender getCapturingAppender() {
@@ -52,20 +80,32 @@ public class LogCaptor implements AutoCloseable {
         }
 
         if (capturingAppenders.isEmpty()) {
-            throw new IllegalArgumentException("TODO");
+            throw new IllegalStateException("Cannot find `CapturingAppender`; please check the README.MD and adapt your log4j2-test.xml");
         } else if (capturingAppenders.size() > 1) {
-            throw new IllegalArgumentException("TODO");
+            throw new IllegalStateException("Found multiple `CapturingAppender` instances " + capturingAppenders + "; please check the README.MD and adapt your log4j2-test.xml");
         }
 
         return capturingAppenders.get(0);
     }
 
 	public static LogCaptor forName(String loggerName) {
-		return new LogCaptor(loggerName);
+		return forName(loggerName, null);
 	}
 
+    private static LogCaptor forName(String loggerName, String altLoggerName) {
+        var captor = new LogCaptor(loggerName, altLoggerName);
+        captor.capturingAppender.registerConsumer(captor.logsConsumer);
+        return captor;
+    }
+
     public static LogCaptor forClass(Class<?> clazz) {
-        return new LogCaptor(clazz.getName());
+        // Note: SLF4J uses getName(), but Log4j2 uses getCannonicalName() if used directly.
+        // In order to reliably capture logs, we therefore simply use both names.
+        return forName(clazz.getCanonicalName(), clazz.getName());
+    }
+
+    public static LogCaptor forRoot() {
+        return forName(LogManager.ROOT_LOGGER_NAME);
     }
 
     public List<String> getTraceLogs() {
@@ -88,25 +128,25 @@ public class LogCaptor implements AutoCloseable {
 		return getLogs(Level.ERROR);
 	}
 
-    public List<String> getLogs(Level level) {
-        return streamLogs()
-                .filter(e -> e.getLevel() == level)
+    public synchronized List<String> getLogs(Level level) {
+            return capturedEvents.stream()
+                    .filter(e -> e.getLevel() == level)
+                    .map(e -> e.getMessage().getFormattedMessage())
+                    .toList();
+    }
+
+    public synchronized List<String> getLogs() {
+        return capturedEvents.stream()
                 .map(e -> e.getMessage().getFormattedMessage())
                 .toList();
     }
 
-    public List<String> getLogs() {
-        return streamLogs()
-                .map(e -> e.getMessage().getFormattedMessage())
-                .toList();
-    }
-
-    public List<LogEvent> getLogEvents() {
-        return streamLogs().toList();
+    public synchronized List<LogEvent> getLogEvents() {
+        return List.copyOf(capturedEvents);
     }
 
     public void setLogLevel(Level level) {
-        Configurator.setLevel(logger, level);
+        doForLoggers(logger -> Configurator.setLevel(logger, level));
     }
 
     public void setLogLevelToInfo() {
@@ -121,27 +161,31 @@ public class LogCaptor implements AutoCloseable {
         setLogLevel(Level.TRACE);
     }
 
-    private Stream<LogEvent> streamLogs() {
-        return capturingAppender.capturedLogEvents().stream().filter(e -> logger.getName().equals(e.getLoggerName()));
-    }
-
     @Override
     public void close() {
-        capturingAppender.stopMonitoringLogger(logger);
+        capturingAppender.unregisterConsumer(logsConsumer);
         resetLogLevel();
+        clearLogs();
     }
 
-    public void clearLogs() {
-        capturingAppender.clearLogs(logger);
+    public synchronized void clearLogs() {
+        capturedEvents.clear();
     }
 
     public void disableLogs() {
-        Configurator.setLevel(logger, Level.OFF);
+        doForLoggers(logger -> Configurator.setLevel(logger, Level.OFF));
     }
 
     public void resetLogLevel() {
-        if (logger.getLevel() != originalLevel) {
-            Configurator.setLevel(logger, originalLevel);
-        }
+        doForLoggers(logger -> {
+            if (logger.getLevel() != originalLevel) {
+                Configurator.setLevel(logger, originalLevel);
+            }
+        });
+    }
+
+    private void doForLoggers(Consumer<Logger> op) {
+        op.accept(logger);
+        if (altLogger != null) op.accept(altLogger);
     }
 }

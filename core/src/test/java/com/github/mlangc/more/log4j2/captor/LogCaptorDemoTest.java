@@ -1,3 +1,22 @@
+/*-
+ * #%L
+ * more-log4j2
+ * %%
+ * Copyright (C) 2025 - 2026 Matthias Langer
+ * %%
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * #L%
+ */
 package com.github.mlangc.more.log4j2.captor;
 
 
@@ -8,10 +27,13 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class LogCaptorDemoTest {
+    private static final Logger LOG = LoggerFactory.getLogger(LogCaptorDemoTest.class);
+
     static class Service1 {
         private static final Logger LOG = LoggerFactory.getLogger(Service1.class);
     }
@@ -97,5 +119,47 @@ public class LogCaptorDemoTest {
 
         service1Captor.clearLogs();
         assertThat(service1Captor.getInfoLogs()).isEmpty();
+    }
+
+    @Test
+    void shouldNotCaptureLogsWhileDisabled() {
+        service1Captor.disableLogs();
+        Service1.LOG.info("Nada");
+        assertThat(service1Captor.getLogs()).isEmpty();
+
+        service1Captor.resetLogLevel();
+        Service1.LOG.info("Tada");
+        assertThat(service1Captor.getLogs()).containsExactly("Tada");
+    }
+
+    // Use this with care, since captured logs are kept in memory till the captor is closed
+    @AutoClose
+    private final LogCaptor rootCaptor = LogCaptor.forRoot();
+
+    @Test
+    void rootCaptorShouldCaptureEverything() {
+        LOG.info("Hello 0");
+        Service1.LOG.info("Hello 1");
+        Service2.LOG.info("Hello 2");
+
+        assertThat(rootCaptor.getInfoLogs()).containsExactly("Hello 0", "Hello 1", "Hello 2");
+        assertThat(service1Captor.getInfoLogs()).containsExactly("Hello 1");
+        assertThat(service2Captor.getInfoLogs()).containsExactly("Hello 2");
+    }
+
+    @Test
+    void baseCaptorShouldCaptureLogsFromBothServices() {
+        try (var baseCaptor = LogCaptor.forName("com.github.mlangc.more.log4j2")) {
+            Service1.LOG.info("Howdy");
+            Service1.LOG.info("Hello");
+
+            assertThat(baseCaptor.getInfoLogs()).containsExactly("Howdy", "Hello");
+        }
+    }
+
+    @Test
+    void shouldCaptureLogsFromOtherThread() {
+        CompletableFuture.runAsync(() -> Service1.LOG.info("async")).join();
+        assertThat(service1Captor.getInfoLogs()).containsExactly("async");
     }
 }

@@ -19,6 +19,7 @@ the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at 
     * [NeutralFilter](#AcceptAllFilter--NeutralFilter)
 * Appenders
     * [AsyncHttpAppender](#Async-HttpAppender)
+    * [CapturingAppender](#Capturing-Appender)
     * [NullAppender](#Null-Appender)
 
 ### Routing Filter
@@ -568,7 +569,164 @@ carefully:
 The `CaptoringAppender` is meant to be used along with the `com.github.mlangc.more.log4j2.captor.LogCaptor` API, which is modeled
 after the
 [LogCaptor](https://github.com/Hakky54/log-captor) library. Unlike the latter, it works exclusively with `log4j2`, and doesn't
-force you to use `logback` for your tests.
+force you to use `logback` for your tests. To use it, first adapt your `log4j2-test.xml` according to the following example:
+```xml
+<Configuration status="WARN">
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %c{2}:%markerSimpleName - %msg%n"/>
+        </Console>
+
+        <!-- Exactly one Captor is needed; the name does not matter-->
+        <Captor name="Captor"/>
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="Console" />
+            
+            <!-- Don't forget to add the captor to the root logger; nothing is captured unless LogCaptors are created -->
+            <AppenderRef ref="Captor"/>
+        </Root>
+    </Loggers>
+</Configuration>
+```
+
+After having prepared your `log4j2-test.xml` like above, you can use the `com.github.mlangc.more.log4j2.captor.LogCaptor` API as
+follows:
+```java
+public class LogCaptorDemoTest {
+    private static final Logger LOG = LoggerFactory.getLogger(LogCaptorDemoTest.class);
+
+    static class Service1 {
+        private static final Logger LOG = LoggerFactory.getLogger(Service1.class);
+    }
+
+    static class Service2 {
+        private static final Logger LOG = LoggerFactory.getLogger(Service2.class);
+    }
+
+    @AutoClose
+    private final LogCaptor service1Captor = LogCaptor.forClass(Service1.class);
+
+    @AutoClose
+    private final LogCaptor service2Captor = LogCaptor.forClass(Service2.class);
+
+    @Test
+    void shouldNotCaptureAnythingIfNothingHappens() {
+        assertThat(service1Captor.getLogs()).isEmpty();
+        assertThat(service2Captor.getLogs()).isEmpty();
+    }
+
+    @Test
+    void shouldCaptureInfoLogs() {
+        Service1.LOG.info("Hello service 1");
+        Service2.LOG.info("Hello service 2");
+
+        assertThat(service1Captor.getInfoLogs()).containsExactly("Hello service 1");
+        assertThat(service2Captor.getInfoLogs()).containsExactly("Hello service 2");
+    }
+
+    @Test
+    void shouldCaptureInfoAndWarnAndErrorLogs() {
+        Service1.LOG.info("Info");
+        Service1.LOG.warn("Warn");
+        Service1.LOG.error("Error");
+
+        assertThat(service1Captor.getInfoLogs()).containsExactly("Info");
+        assertThat(service1Captor.getWarnLogs()).containsExactly("Warn");
+        assertThat(service1Captor.getErrorLogs()).containsExactly("Error");
+        assertThat(service1Captor.getLogs()).containsExactly("Info", "Warn", "Error");
+    }
+
+    @Test
+    void shouldCaptureExceptions() {
+        Service1.LOG.warn("Ups", new RuntimeException("darn"));
+
+        assertThat(service1Captor.getLogEvents()).hasSize(1).first()
+                .satisfies(evt -> assertThat(evt.getThrown()).hasMessage("darn"));
+    }
+
+    @Test
+    void shouldCaptureMdc() {
+        try (var ignore = MDC.putCloseable("test", "me")) {
+            Service1.LOG.info("Test");
+        }
+
+        assertThat(service1Captor.getLogEvents()).hasSize(1).first()
+                .satisfies(evt -> assertThat(evt.getContextData().toMap()).containsExactly(Map.entry("test", "me")));
+    }
+
+    @Test
+    void shouldNotCaptureDebugLogsUnlessEnabled() {
+        Service1.LOG.debug("Not captured");
+        assertThat(service1Captor.getDebugLogs()).isEqualTo(service1Captor.getLogs()).isEmpty();
+
+        service1Captor.setLogLevelToDebug();
+        Service1.LOG.debug("Captured");
+
+        assertThat(service1Captor.getDebugLogs())
+                .isEqualTo(service1Captor.getLogs())
+                .containsExactly("Captured");
+    }
+
+    @Test
+    void shouldClearLogs() {
+        Service1.LOG.info("Test 1");
+        assertThat(service1Captor.getInfoLogs()).hasSize(1);
+
+        service1Captor.clearLogs();
+        assertThat(service1Captor.getInfoLogs()).isEmpty();
+
+        Service1.LOG.info("Test 2");
+        assertThat(service1Captor.getInfoLogs()).hasSize(1);
+
+        service1Captor.clearLogs();
+        assertThat(service1Captor.getInfoLogs()).isEmpty();
+    }
+
+    @Test
+    void shouldNotCaptureLogsWhileDisabled() {
+        service1Captor.disableLogs();
+        Service1.LOG.info("Nada");
+        assertThat(service1Captor.getLogs()).isEmpty();
+
+        service1Captor.resetLogLevel();
+        Service1.LOG.info("Tada");
+        assertThat(service1Captor.getLogs()).containsExactly("Tada");
+    }
+
+    // Use this with care, since captured logs are kept in memory till the captor is closed
+    @AutoClose
+    private final LogCaptor rootCaptor = LogCaptor.forRoot();
+
+    @Test
+    void rootCaptorShouldCaptureEverything() {
+        LOG.info("Hello 0");
+        Service1.LOG.info("Hello 1");
+        Service2.LOG.info("Hello 2");
+
+        assertThat(rootCaptor.getInfoLogs()).containsExactly("Hello 0", "Hello 1", "Hello 2");
+        assertThat(service1Captor.getInfoLogs()).containsExactly("Hello 1");
+        assertThat(service2Captor.getInfoLogs()).containsExactly("Hello 2");
+    }
+
+    @Test
+    void baseCaptorShouldCaptureLogsFromBothServices() {
+        try (var baseCaptor = LogCaptor.forName("com.github.mlangc.more.log4j2")) {
+            Service1.LOG.info("Howdy");
+            Service1.LOG.info("Hello");
+
+            assertThat(baseCaptor.getInfoLogs()).containsExactly("Howdy", "Hello");
+        }
+    }
+
+    @Test
+    void shouldCaptureLogsFromOtherThread() {
+        CompletableFuture.runAsync(() -> Service1.LOG.info("async")).join();
+        assertThat(service1Captor.getInfoLogs()).containsExactly("async");
+    }
+}
+```
 
 ### Null Appender
 

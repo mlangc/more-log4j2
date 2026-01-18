@@ -189,4 +189,10 @@ public class TestHelpers {
 
         return candidates.get(0);
     }
+
+    public static void withAlternativeLoggerContext(ConfigurationBuilder<?> configBuilder, Consumer<LoggerContext> op) {
+        try (var context = loggerContextFromConfig(configBuilder)) {
+            op.accept(context);
+        }
+    }
 }
