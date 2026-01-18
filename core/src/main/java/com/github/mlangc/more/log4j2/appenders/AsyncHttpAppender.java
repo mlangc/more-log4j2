@@ -123,15 +123,6 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
     }
 
-    private static class FutureHolder {
-        final String jobName;
-        volatile CompletableFuture<?> future;
-
-        FutureHolder(String jobName) {
-            this.jobName = jobName;
-        }
-    }
-
     public sealed interface BatchCompletionType { }
 
     public record BatchDeliveredSuccess(HttpStatus httpStatus) implements BatchCompletionType { }
