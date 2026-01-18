@@ -264,6 +264,17 @@ on your classpath (see
 [log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how long
 the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
 
+#### I've set `log4j2.shutdownHookEnabled`, but I'm still loosing some logs when my tests are shutdown.
+
+This might be because Spring
+uses [a custom property source](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html)
+that disables the log4j2 shutdown hook.
+
+To make sure that the appender is flushed whenever your junit test suite is terminated, add
+`com.github.mlangc:more-log4j2-junit` as a test dependency. This installs a custom 
+[TestExecutionListener](https://docs.junit.org/6.0.1/api/org.junit.platform.launcher/org/junit/platform/launcher/TestExecutionListener.html)
+via the [ServiceLoader facility](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/ServiceLoader.html).
+
 #### Will I loose logs if the application crashes?
 
 Yes, there is no way an asynchronous appender can make sure that buffers are drained if the application crashes. However, there
