@@ -65,7 +65,7 @@ public class LogCaptor implements AutoCloseable {
 	}
 
     public static LogCaptor forClass(Class<?> clazz) {
-        return new LogCaptor(clazz.getCanonicalName());
+        return new LogCaptor(clazz.getName());
     }
 
     public List<String> getTraceLogs() {

@@ -539,7 +539,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("retries", testCase.retries)
                         .addAttribute("maxBackoffMs", testCase.maxBackoffMs)
                         .addAttribute("httpClientSslConfigSupplier", AsyncHttpAppenderTest.class.getCanonicalName() + "$" + SslConfigSupplier.class.getSimpleName())
-                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
                         .addComponent(configBuilder.newComponent("OverflowAppenderRef").addAttribute("ref", "Count").addAttribute("level", "ALL")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
@@ -1178,7 +1178,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("maxBatchLogEvents", maxBatchLogEvents)
                         .addAttribute("lingerMs", Integer.MAX_VALUE)
                         .addAttribute("url", wireMockHttpUrl)
-                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
@@ -1376,7 +1376,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("maxBlockOnOverflowMs", Integer.MAX_VALUE)
                         .addAttribute("maxBatchBufferBatches", maxBatchBufferBatches)
                         .addAttribute("maxBatchLogEvents", 1)
-                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
@@ -1587,7 +1587,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("lingerMs", 1)
                         .addAttribute("maxBackoffMs", 1)
                         .addAttribute("readTimeoutMs", timeoutMs)
-                        .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
@@ -1722,7 +1722,7 @@ class AsyncHttpAppenderTest {
                             .addAttribute("retries", retries)
                             .addAttribute("maxConcurrentRequests", 1)
                             .addAttribute("maxBackoffMs", backoffMs)
-                            .addAttribute("batchCompletionListener", "com.github.mlangc.more.log4j2.appenders.AsyncHttpAppenderTest$TestBatchCompletionListener")
+                            .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
                             .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                     .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 

@@ -549,7 +549,7 @@ you can use the following recipe:
 | ignoreExceptions                | boolean                                             | true                           | No       | Ignore exceptions during logging                                                                                                                | Yes                                                       |
 | batchCompletionListener         | String                                              | null                           | No       | Class name for custom batch completion listener                                                                                                 | Yes                                                       |
 
-### Read this if you want to play with the `batchCompletionListener` option
+#### Read this if you want to play with the `batchCompletionListener` option
 
 The `AsyncHttpAppender` can expose internal data for monitoring purposes to a user supplied
 `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` implementation. Though the interface is
@@ -562,6 +562,13 @@ carefully:
    invocations of the appender. If you most log, do so asynchronously, from another thread and ensure that the amount of logs that
    you generate in the listener is small compared to `maxBatchBytes` and
    `maxBatchLogEvents` to prevent feedback loops.
+
+### Capturing Appender
+
+The `CaptoringAppender` is meant to be used along with the `com.github.mlangc.more.log4j2.captor.LogCaptor` API, which is modeled
+after the
+[LogCaptor](https://github.com/Hakky54/log-captor) library. Unlike the latter, it works exclusively with `log4j2`, and doesn't
+force you to use `logback` for your tests.
 
 ### Null Appender
 
