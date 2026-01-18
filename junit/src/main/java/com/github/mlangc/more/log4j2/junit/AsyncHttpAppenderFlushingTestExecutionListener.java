@@ -21,19 +21,19 @@ package com.github.mlangc.more.log4j2.junit;
 
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender;
 import org.apache.logging.log4j.core.LoggerContext;
-import org.apache.logging.log4j.status.StatusLogger;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestPlan;
 
-import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 public class AsyncHttpAppenderFlushingTestExecutionListener implements TestExecutionListener {
     private static final String PROPERTY_PREFIX = "moreLog4j2.asyncHttpAppenderFlushingTestExecutionListener";
     private static final String ENV_PREFIX = "MORE_LOG4J2_ASYNC_HTTP_APPENDER_FLUSHING_TEST_EXECUTION_LISTENER";
 
     private enum ConfigProperty {
-        ENABLED("Enabled", "ENABLED"), TIMEOUT_MS("TimeoutMs", "TIMEOUT_MS");
+        ENABLED("Enabled", "ENABLED");
 
         final String propertySuffix;
         final String envSuffix;
@@ -72,7 +72,6 @@ public class AsyncHttpAppenderFlushingTestExecutionListener implements TestExecu
     }
 
     private final boolean enabled = "true".equals(ConfigProperty.ENABLED.load("true"));
-    private final int timeoutMs = getTimeoutMs();
 
     @Override
     public void testPlanExecutionFinished(TestPlan testPlan) {
@@ -80,36 +79,17 @@ public class AsyncHttpAppenderFlushingTestExecutionListener implements TestExecu
             return;
         }
 
-        LoggerContext.getContext(false).getConfiguration().getAppenders().values().forEach(appender -> {
-            if (appender instanceof AsyncHttpAppender asyncHttpAppender) {
-                try {
-                    asyncHttpAppender.forceFlushAndAwaitTillPushed().orTimeout(timeoutMs, TimeUnit.MILLISECONDS).join();
-                } catch (Exception e) {
-                    StatusLogger.getLogger().error("Error flushing logs of {}", asyncHttpAppender, e);
-                }
-            }
-        });
-    }
+        var asyncAppenders = LoggerContext.getContext(false).getConfiguration().getAppenders().values().stream()
+                .flatMap(appender -> {
+                    if (appender instanceof AsyncHttpAppender asyncHttpAppender) return Stream.of(asyncHttpAppender);
+                    else return Stream.empty();
+                }).toList();
 
-    private static String firstCharacterToLower(String s) {
-        if (s.isEmpty()) {
-            return s;
-        }
+        var maxTimeoutMillis = asyncAppenders.stream().mapToInt(AsyncHttpAppender::shutdownTimeoutMs).max().orElse(0);
 
-        return s.substring(0, 1).toLowerCase(Locale.ROOT) + s.substring(1);
-    }
-
-    private static int getTimeoutMs() {
-        int defaultTimeoutMs = 5000;
-        try {
-            var timeoutMs = Integer.parseInt(ConfigProperty.TIMEOUT_MS.load("" + defaultTimeoutMs));
-            if (timeoutMs < 0) {
-                StatusLogger.getLogger().error("Invalid value {} for property {}", timeoutMs, ConfigProperty.TIMEOUT_MS);
-            }
-            return timeoutMs;
-        } catch (NumberFormatException e) {
-            StatusLogger.getLogger().error("Cannot parse value for property {}", ConfigProperty.TIMEOUT_MS, e);
-            return defaultTimeoutMs;
-        }
+        CompletableFuture.allOf(
+                asyncAppenders.stream()
+                        .map(appender -> appender.forceFlushAndAwaitTillPushed().orTimeout(maxTimeoutMillis, TimeUnit.MILLISECONDS))
+                        .toArray(CompletableFuture<?>[]::new)).join();
     }
 }

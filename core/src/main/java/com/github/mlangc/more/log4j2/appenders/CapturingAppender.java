@@ -20,12 +20,14 @@
 package com.github.mlangc.more.log4j2.appenders;
 
 import org.apache.logging.log4j.core.Appender;
+import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.config.Node;
 import org.apache.logging.log4j.core.config.Property;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
+import org.apache.logging.log4j.core.config.plugins.PluginElement;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.core.config.plugins.validation.constraints.Required;
 
@@ -37,9 +39,9 @@ import java.util.WeakHashMap;
 public class CapturingAppender extends AbstractAppender {
     private final Set<LogEventConsumer> consumers = Collections.newSetFromMap(new WeakHashMap<>());
 
-    protected CapturingAppender(String name) {
+    protected CapturingAppender(String name, Filter filter) {
         // TODO: Filter support
-        super(name, null, null, true, Property.EMPTY_ARRAY);
+        super(name, filter, null, true, Property.EMPTY_ARRAY);
     }
 
     @Override
@@ -57,8 +59,10 @@ public class CapturingAppender extends AbstractAppender {
     }
 
     @PluginFactory
-    public static CapturingAppender create(@Required @PluginAttribute(value = "name") String name) {
-        return new CapturingAppender(name);
+    public static CapturingAppender create(
+            @Required @PluginAttribute(value = "name") String name,
+            @PluginElement("Filter") Filter filter) {
+        return new CapturingAppender(name, filter);
     }
 
     public interface LogEventConsumer {

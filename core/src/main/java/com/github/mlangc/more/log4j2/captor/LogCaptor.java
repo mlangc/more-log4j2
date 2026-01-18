@@ -79,18 +79,20 @@ public class LogCaptor implements AutoCloseable {
             }
         }
 
+        var readmeLink = "https://github.com/mlangc/more-log4j2?tab=readme-ov-file#Capturing-Appender";
         if (capturingAppenders.isEmpty()) {
-            throw new IllegalStateException("Cannot find `CapturingAppender`; please check the README.MD and adapt your log4j2-test.xml");
+            throw new IllegalStateException("Cannot find `CapturingAppender`; please check " + readmeLink + " and adapt your log4j2-test.xml");
+
         } else if (capturingAppenders.size() > 1) {
-            throw new IllegalStateException("Found multiple `CapturingAppender` instances " + capturingAppenders + "; please check the README.MD and adapt your log4j2-test.xml");
+            throw new IllegalStateException("Found multiple `CapturingAppender` instances " + capturingAppenders + "; please check " + readmeLink + " and adapt your log4j2-test.xml");
         }
 
         return capturingAppenders.get(0);
     }
 
-	public static LogCaptor forName(String loggerName) {
-		return forName(loggerName, null);
-	}
+    public static LogCaptor forName(String loggerName) {
+        return forName(loggerName, null);
+    }
 
     private static LogCaptor forName(String loggerName, String altLoggerName) {
         var captor = new LogCaptor(loggerName, altLoggerName);
@@ -124,15 +126,15 @@ public class LogCaptor implements AutoCloseable {
         return getLogs(Level.WARN);
     }
 
-	public List<String> getErrorLogs() {
-		return getLogs(Level.ERROR);
-	}
+    public List<String> getErrorLogs() {
+        return getLogs(Level.ERROR);
+    }
 
     public synchronized List<String> getLogs(Level level) {
-            return capturedEvents.stream()
-                    .filter(e -> e.getLevel() == level)
-                    .map(e -> e.getMessage().getFormattedMessage())
-                    .toList();
+        return capturedEvents.stream()
+                .filter(e -> e.getLevel() == level)
+                .map(e -> e.getMessage().getFormattedMessage())
+                .toList();
     }
 
     public synchronized List<String> getLogs() {

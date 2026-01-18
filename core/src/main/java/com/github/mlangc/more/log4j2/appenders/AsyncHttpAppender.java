@@ -777,7 +777,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return maxBlockOnOverflowMs;
     }
 
-    int shutdownTimeoutMs() {
+    public int shutdownTimeoutMs() {
         return shutdownTimeoutMs;
     }
 
