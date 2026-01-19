@@ -500,7 +500,8 @@ public class AsyncHttpAppender extends AbstractAppender {
                     try {
                         currentBufferBytes -= releaseBytes;
                         pendingBatchIds.remove(batchId);
-                        pendingBatchesAwaitingFutures.removeIf(f -> f.onBatchCompletedAssumingLocked(batchId));
+                        pendingBatchesAwaitingFutures.removeIf(
+								f -> f.onBatchCompletedAssumingLocked(batchId, throwable));
 
                         bufferBytesSnapshot = currentBufferBytes;
                         bufferedBatchesSnapshot = bufferedBatches.size();
@@ -576,6 +577,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     private class PendingBatchesAwaitingFuture extends CompletableFuture<Void> {
         private final Set<Long> pendingIds;
         private Long unflushedId;
+		private List<Throwable> throwables;
 
         PendingBatchesAwaitingFuture(Set<Long> pendingIds, Long unflushedId) {
             this.pendingIds = pendingIds;
@@ -586,22 +588,48 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
         }
 
-        boolean onBatchCompletedAssumingLocked(long id) {
+        boolean onBatchCompletedAssumingLocked(long id, Throwable throwable) {
             if (unflushedId != null && unflushedId == id) {
                 unflushedId = null;
                 if (pendingIds.isEmpty()) {
-                    complete(null);
+                    completeInternal(throwable);
                 }
             } else if (pendingIds.remove(id) && pendingIds.isEmpty() && unflushedId == null) {
-                complete(null);
+                completeInternal(throwable);
             }
 
             if (unflushedId != null && nextBatchId == unflushedId) {
                 tryFlushAssumingLocked();
             }
 
-            return isDone();
+			if (!isDone()) {
+				if (throwable != null) {
+					if (throwables == null) {
+						throwables = new ArrayList<>();
+					}
+
+					throwables.add(throwable);
+				}
+
+				return false;
+			}
+
+			return true;
         }
+
+		private void completeInternal(Throwable throwable) {
+			if (throwable == null) {
+				complete(null);
+			} else {
+				if (throwables != null) {
+					for (Throwable otherThrowable : throwables) {
+						throwable.addSuppressed(otherThrowable);
+					}
+				}
+
+				completeExceptionally(throwable);
+			}
+		}
 
         @Override
         public String toString() {

@@ -1209,6 +1209,39 @@ class AsyncHttpAppenderTest {
 
     }
 
+	@Test
+	void forceFlushShouldPropagateExceptions() {
+		wireMockExt.stubFor(post(wireMockPath).willReturn(forbidden().withFixedDelay(100)));
+
+		var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+		configBuilder = configBuilder
+				.setStatusLevel(Level.WARN)
+				.add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+						.addAttribute("lingerMs", Integer.MAX_VALUE)
+						.addAttribute("url", wireMockHttpUrl)
+						.addAttribute("maxBatchLogEvents", 1)
+						.addAttribute("retries", 0)
+						.add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+				.add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+		try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+			var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
+			var log = context.getLogger(getClass());
+
+			for (int i = 0; i < 10; i++) {
+				log.info("test");
+			}
+
+			assertThat(appender.forceFlushAndAwaitTillPushed())
+					.completesExceptionallyWithin(1, TimeUnit.SECONDS)
+					.withThrowableThat().havingRootCause()
+					.isInstanceOfSatisfying(HttpErrorResponseException.class, e -> {
+						assertThat(e.httpStatus().code()).isEqualTo(403);
+						assertThat(e.getSuppressed()).allMatch(s -> s instanceof HttpErrorResponseException);
+					});
+		}
+	}
+
     private void shouldPush3shortLogs(LoggerContext context) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 
