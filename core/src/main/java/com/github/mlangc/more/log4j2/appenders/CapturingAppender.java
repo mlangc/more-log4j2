@@ -19,6 +19,10 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
+
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.LogEvent;
@@ -31,16 +35,11 @@ import org.apache.logging.log4j.core.config.plugins.PluginElement;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 import org.apache.logging.log4j.core.config.plugins.validation.constraints.Required;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.WeakHashMap;
-
 @Plugin(name = "Captor", category = Node.CATEGORY, elementType = Appender.ELEMENT_TYPE, printObject = true)
 public class CapturingAppender extends AbstractAppender {
     private final Set<LogEventConsumer> consumers = Collections.newSetFromMap(new WeakHashMap<>());
 
     protected CapturingAppender(String name, Filter filter) {
-        // TODO: Filter support
         super(name, filter, null, true, Property.EMPTY_ARRAY);
     }
 
