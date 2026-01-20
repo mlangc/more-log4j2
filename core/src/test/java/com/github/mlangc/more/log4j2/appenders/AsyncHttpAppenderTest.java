@@ -1214,12 +1214,14 @@ class AsyncHttpAppenderTest {
 		wireMockExt.stubFor(post(wireMockPath).willReturn(forbidden().withFixedDelay(100)));
 
 		var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
-		configBuilder = configBuilder
+        int maxConcurrentRequests = 20;
+        configBuilder = configBuilder
 				.setStatusLevel(Level.WARN)
 				.add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
 						.addAttribute("lingerMs", Integer.MAX_VALUE)
 						.addAttribute("url", wireMockHttpUrl)
 						.addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("maxConcurrentRequests", maxConcurrentRequests)
 						.addAttribute("retries", 0)
 						.add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
 				.add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
@@ -1228,7 +1230,7 @@ class AsyncHttpAppenderTest {
 			var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
 			var log = context.getLogger(getClass());
 
-			for (int i = 0; i < 10; i++) {
+			for (int i = 0; i < maxConcurrentRequests; i++) {
 				log.info("test");
 			}
 
@@ -1237,7 +1239,10 @@ class AsyncHttpAppenderTest {
 					.withThrowableThat().havingRootCause()
 					.isInstanceOfSatisfying(HttpErrorResponseException.class, e -> {
 						assertThat(e.httpStatus().code()).isEqualTo(403);
-						assertThat(e.getSuppressed()).allMatch(s -> s instanceof HttpErrorResponseException);
+
+						assertThat(e.getSuppressed())
+                                .hasSizeBetween(1, 10) // <-- assert that we have at least one, but not too many suppressed exceptions
+                                .allMatch(s -> s instanceof HttpErrorResponseException);
 					});
 		}
 	}

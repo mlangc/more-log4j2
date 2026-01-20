@@ -501,7 +501,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                         currentBufferBytes -= releaseBytes;
                         pendingBatchIds.remove(batchId);
                         pendingBatchesAwaitingFutures.removeIf(
-								f -> f.onBatchCompletedAssumingLocked(batchId, throwable));
+                                f -> f.onBatchCompletedAssumingLocked(batchId, throwable));
 
                         bufferBytesSnapshot = currentBufferBytes;
                         bufferedBatchesSnapshot = bufferedBatches.size();
@@ -575,9 +575,14 @@ public class AsyncHttpAppender extends AbstractAppender {
     }
 
     private class PendingBatchesAwaitingFuture extends CompletableFuture<Void> {
+        @GuardedBy("lock")
         private final Set<Long> pendingIds;
+        @GuardedBy("lock")
         private Long unflushedId;
-		private List<Throwable> throwables;
+        @GuardedBy("lock")
+        private Throwable completionError;
+        @GuardedBy("lock")
+        private int numSuppressedErrors;
 
         PendingBatchesAwaitingFuture(Set<Long> pendingIds, Long unflushedId) {
             this.pendingIds = pendingIds;
@@ -593,43 +598,44 @@ public class AsyncHttpAppender extends AbstractAppender {
                 unflushedId = null;
                 if (pendingIds.isEmpty()) {
                     completeInternal(throwable);
+                    return true;
                 }
             } else if (pendingIds.remove(id) && pendingIds.isEmpty() && unflushedId == null) {
                 completeInternal(throwable);
+                return true;
             }
 
             if (unflushedId != null && nextBatchId == unflushedId) {
                 tryFlushAssumingLocked();
             }
 
-			if (!isDone()) {
-				if (throwable != null) {
-					if (throwables == null) {
-						throwables = new ArrayList<>();
-					}
-
-					throwables.add(throwable);
-				}
-
-				return false;
-			}
-
-			return true;
+            processPotentialThrowable(throwable);
+            return false;
         }
 
-		private void completeInternal(Throwable throwable) {
-			if (throwable == null) {
-				complete(null);
-			} else {
-				if (throwables != null) {
-					for (Throwable otherThrowable : throwables) {
-						throwable.addSuppressed(otherThrowable);
-					}
-				}
+        private void processPotentialThrowable(Throwable throwable) {
+            if (throwable == null) {
+                return;
+            }
 
-				completeExceptionally(throwable);
-			}
-		}
+            if (completionError == null) {
+                completionError = throwable;
+            } else if (numSuppressedErrors < 5) {
+                // Note: We have a limit on the number of suppressed errors since keeping around too many of will consume memory with almost no benefit.
+                completionError.addSuppressed(throwable);
+                numSuppressedErrors++;
+            }
+        }
+
+        private void completeInternal(Throwable throwable) {
+            processPotentialThrowable(throwable);
+
+            if (completionError == null) {
+                complete(null);
+            } else {
+                completeExceptionally(completionError);
+            }
+        }
 
         @Override
         public String toString() {
