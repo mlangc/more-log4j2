@@ -60,6 +60,7 @@ class AsyncHttpAppenderWithPartiallyUnavailableBackendTest {
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
                         .addAttribute("url", wireMockHttpUrl)
                         .addAttribute("lingerMs", 1)
+                        .addAttribute("maxBackoffMs", 1)
                         .addAttribute("connectTimeoutMs", 25)
                         .addAttribute("readTimeoutMs", 25)
                         .addAttribute("retries", retries)
