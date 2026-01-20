@@ -15,6 +15,12 @@
     <packaging>jar</packaging>
     <description>Helpers for junit</description>
 
+    <scm>
+        <url>scm:git:https://github.com/mlangc/more-log4j2</url>
+        <developerConnection>scm:git:git@github.com:mlangc/more-log4j2.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
     <dependencies>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
