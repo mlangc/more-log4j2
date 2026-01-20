@@ -14,7 +14,7 @@
     <scm>
         <url>scm:git:https://github.com/mlangc/more-log4j2</url>
         <developerConnection>scm:git:git@github.com:mlangc/more-log4j2.git</developerConnection>
-        <tag>more-log4j2-bom-2.1.0</tag>
+        <tag>more-log4j2-2.1.0</tag>
     </scm>
 
     <developers>
