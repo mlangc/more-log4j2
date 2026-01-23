@@ -21,6 +21,10 @@ the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at 
     * [AsyncHttpAppender](#Async-HttpAppender)
     * [CapturingAppender](#Capturing-Appender)
     * [NullAppender](#Null-Appender)
+* Maven Coordinates
+    * [more-log4j2](#more-log4j2)
+    * [more-log4j2-junit](#more-log4j2-junit)
+    * [more-log4j2-bom](#more-log4j2-bom)
 
 ### Routing Filter
 
@@ -782,6 +786,29 @@ example like this:
 </Root>
 </Loggers>
 ```
+
+## Maven Coordinates
+
+### more-log4j2
+
+`com.github.mlangc:more-log4j2` is the main module. It contains filters, appenders and the `LogCaptor`.
+
+### more-log4j2-junit
+
+`com.github.mlangc:more-log4j2-junit` contains a
+[junit TestExecutionListener](https://docs.junit.org/6.0.0/api/org.junit.platform.launcher/org/junit/platform/launcher/TestExecutionListener.html)
+that makes sure `AsyncHttpAppender`s are flushed after your tests have finished regardless of the
+[log4j2.shutdownHookEnabled system property](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled),
+that might have no effect
+[due to on override from spring boot](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html).
+Simply putting this artifact into your test runtime classpath (`testRuntimeOnly` with Gradle) is enough. The
+`AsyncHttpAppenderFlushingTestExecutionListener` is [registered automatically via the ServiceLoader mechanism](https://docs.junit.org/6.0.1/advanced-topics/launcher-api.html#listeners-custom).
+
+### more-log4j2-bom
+`com.github.mlangc:more-log4j2-bom` contains a 
+[BOM](https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html#Bill_of_Materials_.28BOM.29_POMs)
+with module versions. If you use more than one `more-log4j2` module, you can use this BOM to make sure that their versions are
+compatible.
 
 ## Additional Notes
 
