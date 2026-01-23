@@ -8,6 +8,7 @@
         <relativePath>parent/pom.xml</relativePath>
     </parent>
 
+    <name>more-log4j2-bom</name>
     <artifactId>more-log4j2-bom</artifactId>
     <packaging>pom</packaging>
 

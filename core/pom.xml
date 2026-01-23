@@ -11,7 +11,7 @@
     <artifactId>more-log4j2</artifactId>
     <packaging>jar</packaging>
 
-    <name>more-log4j2</name>
+    <name>more-log4j2-core</name>
     <description>A collection of plugins for log4j2.</description>
 
     <dependencies>
