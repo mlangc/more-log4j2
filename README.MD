@@ -575,7 +575,7 @@ carefully:
 1. Your `BatchCompletionListener` will be executed by the thread that drains the batch buffer. This thread must never be blocked
    or monopolized for longer periods of time, or else your logs might not be drained in time.
 2. Logs generated directly or indirectly from a `BatchCompletionListener` are problematic, since they lead to recursive
-   invocations of the appender. If you most log, do so asynchronously, from another thread and ensure that the amount of logs that
+   invocations of the appender. If you must log, do so asynchronously, from another thread and ensure that the amount of logs that
    you generate in the listener is small compared to `maxBatchBytes` and
    `maxBatchLogEvents` to prevent feedback loops.
 
