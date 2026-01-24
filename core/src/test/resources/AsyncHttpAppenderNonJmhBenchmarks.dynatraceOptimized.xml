@@ -24,7 +24,11 @@
         <Property name="pattern" value="${sys:benchmarkLog4jPattern}"/>
     </Properties>
     <Appenders>
-        <CountingAppender name="Count"/>
+        <CountingAppender name="Count">
+            <!-- don't count dropped SFM logs, so that we can easily compare ingested logs with local counts -->
+            <MarkerFilter marker="BenchmarkSfm" onMatch="DENY" onMismatch="NEUTRAL"/>
+        </CountingAppender>
+
         <AsyncHttp name="AsyncHttp" url="${env:DYNATRACE_API_V2_LOGS_INGEST}" contentEncoding="gzip"
                    batchCompletionListener="com.github.mlangc.more.log4j2.benchmarks.AsyncHttpAppenderNonJmhBenchmarks$BatchCompletionListener"
                    maxBatchBytes="1000000" maxBatchLogEvents="50000" httpSuccessCodes="204" httpRetryCodes="429,503"

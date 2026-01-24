@@ -21,12 +21,14 @@ package com.github.mlangc.more.log4j2.test.helpers;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Appender;
+import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.config.Node;
 import org.apache.logging.log4j.core.config.Property;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
+import org.apache.logging.log4j.core.config.plugins.PluginElement;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
 
 import java.util.Collections;
@@ -41,8 +43,8 @@ public class CountingAppender extends AbstractAppender {
     private final ConcurrentHashMap<String, Long> numEventsWithMarker = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Level, Long> numEventsWithLevel = new ConcurrentHashMap<>();
 
-    protected CountingAppender(String name) {
-        super(name, null, null, false, Property.EMPTY_ARRAY);
+    CountingAppender(String name, Filter filter) {
+        super(name, filter, null, false, Property.EMPTY_ARRAY);
     }
 
     @Override
@@ -58,8 +60,10 @@ public class CountingAppender extends AbstractAppender {
     }
 
     @PluginFactory
-    public static CountingAppender create(@PluginAttribute("name") String name) {
-        return new CountingAppender(name);
+    public static CountingAppender create(
+            @PluginAttribute("name") String name,
+            @PluginElement("Filter") Filter filter) {
+        return new CountingAppender(name, filter);
     }
 
     public long currentCount() {

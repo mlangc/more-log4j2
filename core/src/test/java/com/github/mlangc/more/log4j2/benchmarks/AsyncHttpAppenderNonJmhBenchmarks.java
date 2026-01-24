@@ -33,9 +33,11 @@ import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
 import org.apache.logging.log4j.status.StatusLogger;
 
+import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.IntFunction;
 import java.util.stream.IntStream;
 
 import static com.github.mlangc.more.log4j2.test.helpers.WireMockHelpers.configureMappingWithRandomFailuresAndTimeouts;
@@ -53,30 +55,15 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
     public static void main(String[] args) throws Exception {
         System.setProperty("benchmarkLog4jPattern", "%d{HH:mm:ss.SSS} %-5level %c{2}@[%t] - %msg%n");
 
-        new WiremockBenchmarkTemplate() {
+        new BenchmarkTemplate() {
             @Override
             String log4jConfigLocation() {
-                return "AsyncHttpAppenderNonJmhBenchmarks.wireMockAggressiveHttpTimeouts.xml";
+                return "AsyncHttpAppenderNonJmhBenchmarks.dynatraceOptimized.xml";
             }
 
             @Override
             int parallelism() {
                 return 4;
-            }
-
-            @Override
-            double simulatedFailureRate() {
-                return 0.1;
-            }
-
-            @Override
-            int simulatedMedianResponseTimeMs() {
-                return 1;
-            }
-
-            @Override
-            int triggerTimeoutMs() {
-                return 2_000;
             }
 
             @Override
@@ -97,6 +84,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
     }
 
     static abstract class BenchmarkTemplate {
+        final String uuid = UUID.randomUUID().toString();
+
         abstract String log4jConfigLocation();
 
         abstract int parallelism();
@@ -111,8 +100,8 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
 
         }
 
-        void logInfoMessage(Logger log, long threadLocalSequence) {
-            log.info("[{}] A prefix for king & country: {}", threadLocalSequence, RandomStringUtils.insecure().nextAlphanumeric(10, 30));
+        void logInfoMessage(Logger log, int threadId, long threadLocalSequence) {
+            log.info("[uuid={}, t={}, s={}] A prefix for king & country: {}", uuid, threadId, threadLocalSequence, RandomStringUtils.insecure().nextAlphanumeric(10, 30));
         }
 
         void run() throws Exception {
@@ -130,10 +119,10 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                 var batchCompletionListener = (BatchCompletionListener) context.getConfiguration().<AsyncHttpAppender>getAppender("AsyncHttp").batchCompletionListener();
                 batchCompletionListener.log = log;
 
-                Runnable logTillStopped = () -> {
+                IntFunction<Runnable> logTillStopped = threadId -> () -> {
                     var sequence = 0L;
                     while (!stop.get()) {
-                        logInfoMessage(log, sequence++);
+                        logInfoMessage(log, threadId, sequence++);
                         logEvents.increment();
                     }
                 };
@@ -173,10 +162,12 @@ public class AsyncHttpAppenderNonJmhBenchmarks {
                         SCHEDULED_EXECUTOR_SERVICE.scheduleAtFixedRate(checkAndUpdateStatistics, 1, 1, TimeUnit.SECONDS));
 
                 var logJobs = IntStream.range(0, parallelism())
-                        .mapToObj(ignore -> CompletableFuture.runAsync(logTillStopped))
+                        .mapToObj(threadId -> CompletableFuture.runAsync(logTillStopped.apply(threadId)))
                         .toList();
 
                 logJobs.forEach(CompletableFuture::join);
+                out.printf("%s log events with uuid=%s out of which %s where dropped, which means that %s events should have been delivered%n",
+                        logEvents.longValue(), uuid, overflowCountingAppender.currentCount(), logEvents.longValue() - overflowCountingAppender.currentCount());
             } finally {
                 shutdown();
             }
