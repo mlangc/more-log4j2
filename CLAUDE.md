@@ -15,8 +15,8 @@ Uses Maven Wrapper — prefer `./mvnw` over `mvn`:
 # Run all tests
 ./mvnw test
 
-# Run a single test class
-./mvnw -Dtest=ClassName test
+# Run a single test class (use -pl to avoid failure in modules that don't have the test)
+./mvnw -Dtest=ClassName test -pl core -am
 
 # Mutation testing (PIT) — always run selectively; full suite can take 30+ minutes.
 # Requires compiled classes first. Use -DtargetClasses with a glob to scope to one class or package:
