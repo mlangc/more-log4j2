@@ -370,6 +370,29 @@ class HttpRetryManagerTest {
                 });
     }
 
+    @Test
+    void shouldWrapButNotRetryOnSynchronouslyThrownExceptions() {
+        var exception = new RuntimeException("sync exception");
+        var retryManager = new HttpRetryManager(new Config(1, 1, s -> s == 200, e -> e == exception, s -> false), executor);
+
+        Supplier<CompletableFuture<HttpStatus>> simulatedRequest = new Supplier<>() {
+            final AtomicBoolean invoked = new AtomicBoolean();
+
+            @Override
+            public CompletableFuture<HttpStatus> get() {
+                if (!invoked.get()) {
+                    throw exception;
+                }
+
+                return CompletableFuture.completedFuture(new HttpStatus(200, "OK"));
+            }
+        };
+
+        var managedRequest = retryManager.run(simulatedRequest);
+        assertThat(managedRequest).completesExceptionallyWithin(1, TimeUnit.SECONDS)
+                .withThrowableThat().havingRootCause().isSameAs(exception);
+    }
+
     @AfterAll
     static void afterAll() throws InterruptedException {
         executor.shutdown();

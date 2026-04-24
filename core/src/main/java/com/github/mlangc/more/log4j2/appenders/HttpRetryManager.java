@@ -65,7 +65,15 @@ class HttpRetryManager {
     }
 
     CompletableFuture<HttpStatusAndStats> run(Supplier<CompletableFuture<HttpStatus>> op) {
-        return run0(op, 1, startMaxBackoffNanos, nanoClock.nanoTime(), 0, 0);
+        Supplier<CompletableFuture<HttpStatus>> wrappedOp = () -> {
+            try {
+                return op.get();
+            } catch (Exception e) {
+                return CompletableFuture.failedFuture(new WrappedSyncException(e));
+            }
+        };
+
+        return run0(wrappedOp, 1, startMaxBackoffNanos, nanoClock.nanoTime(), 0, 0);
     }
 
     void disableRetries() {
@@ -89,6 +97,11 @@ class HttpRetryManager {
 
             if (e != null) {
                 e = unpackCompletionException(e);
+
+                if (e instanceof WrappedSyncException syncException) {
+                    outerFuture.completeExceptionally(syncException.wrappedException);
+                    return;
+                }
 
                 if (tries > config.maxRetries || !(e instanceof Exception) || !config.exceptionRetryPredicate.test((Exception) e) || retriesDisabled) {
                     innerFuture = CompletableFuture.failedFuture(new HttpRequestFailedException(retryStats.get(), e));
@@ -142,6 +155,14 @@ class HttpRetryManager {
         }
 
         return throwable;
+    }
+
+    private static class WrappedSyncException extends RuntimeException {
+        final Exception wrappedException;
+
+        private WrappedSyncException(Exception wrappedException) {
+            this.wrappedException = wrappedException;
+        }
     }
 
     record HttpStatusAndStats(HttpStatus status, RetryStats stats) { }
