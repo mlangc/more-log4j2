@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -1865,6 +1865,59 @@ class AsyncHttpAppenderTest {
         var collectedLinesPerStatusCode = collectReceivedLinesPerStatusCode(wireMockPath);
         assertThat(collectedLinesPerStatusCode).containsOnlyKeys(200);
         assertThat(collectedLinesPerStatusCode.get(200).keySet()).isSubsetOf(expectedKeys);
+    }
+
+    @Test
+    void shouldAccountForSkippedSeparatorsWhenCheckingAgainstMaxBatchBytes() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchPrefix", "")
+                        .addAttribute("batchSeparator", ",")
+                        .addAttribute("batchSuffix", "")
+                        .addAttribute("maxBatchBytes", "x,x,x".length())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var log = context.getLogger(getClass());
+            log.info("x,");
+            log.info("x,");
+            log.info("x");
+        }
+
+        assertThat(collectReceivedLinesPerStatusCode(wireMockPath)).isEqualTo(Map.of(200, Map.of("x,x,x", 1)));
+    }
+
+    @Test
+    void shouldNotWronglyAccountForSkippedSeparatorsWhenCheckingAgainstMaxBatchBytes() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchPrefix", "")
+                        .addAttribute("batchSeparator", ",")
+                        .addAttribute("batchSeparatorInsertionStrategy", "always")
+                        .addAttribute("batchSuffix", "")
+                        .addAttribute("maxBatchBytes", "x,x,x".length())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var log = context.getLogger(getClass());
+            log.info("x,");
+            log.info("x,");
+            log.info("x");
+        }
+
+        assertThat(collectReceivedLinesPerStatusCode(wireMockPath)).isEqualTo(Map.of(200, Map.of("x,,x,", 1, "x", 1)));
     }
 
     @Test

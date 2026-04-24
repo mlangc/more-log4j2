@@ -374,7 +374,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             if (!overflow) {
                 if (currentBatchBytes == 0) {
                     currentBatchBytes += batchPrefix.length;
-                } else {
+                } else if (needSeparatorAssumeLocked(eventBytes)) {
                     currentBatchBytes += batchSeparator.length;
                 }
 
@@ -389,7 +389,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                         if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
                             if (currentBatchBytes == 0) {
                                 currentBatchBytes += batchPrefix.length;
-                            } else {
+                            } else if (needSeparatorAssumeLocked(eventBytes)) {
                                 currentBatchBytes += batchSeparator.length;
                             }
 
@@ -425,8 +425,25 @@ public class AsyncHttpAppender extends AbstractAppender {
         } else if (currentBatch.size() >= maxBatchLogEvents) {
             return true;
         } else {
-            return currentBatchBytes + batchSeparator.length + batchSuffix.length + eventBytes.length > maxBatchBytes;
+            var separatorLen = needSeparatorAssumeLocked(eventBytes) ? batchSeparator.length : 0;
+            return currentBatchBytes + separatorLen + batchSuffix.length + eventBytes.length > maxBatchBytes;
         }
+    }
+
+    private boolean needSeparatorAssumeLocked(byte[] nextEventBytes) {
+        if (currentBatchBytes == 0) {
+            return false;
+        }
+
+        if (batchSeparatorInsertionStrategy == BatchSeparatorInsertionStrategy.ALWAYS) {
+            return true;
+        }
+
+        if (endsWith(currentBatch.get(currentBatch.size() - 1), batchSeparator)) {
+            return false;
+        }
+
+        return !startsWith(nextEventBytes, batchSeparator);
     }
 
     private void doWithLock(Runnable op) {
