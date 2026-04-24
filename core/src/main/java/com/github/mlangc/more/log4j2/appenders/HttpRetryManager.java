@@ -78,7 +78,7 @@ class HttpRetryManager {
         CompletableFuture<HttpStatusAndStats> outerFuture = new CompletableFuture<>();
 
 
-        var nanos0 = tries == 0 ? startNanos : nanoClock.nanoTime();
+        var nanos0 = nanoClock.nanoTime();
         op.get().whenComplete((r, e) -> {
             var newAccumulatedRequestNanos = accumulatedRequestNanos + nanoClock.nanoTime() - nanos0;
 

@@ -48,6 +48,17 @@ The key implementation detail to be aware of when reading the code: batch draini
 intentionally **single-threaded** (one drainer thread using the async `HttpClient` API), so
 any logic that touches the drain path must not block.
 
+**`currentBatchBytes` accounting**: this field tracks
+`batchPrefix.length + (N−1)×batchSeparator.length + Σ(event bytes)` — i.e. it includes the
+separators between already-added events. `needsFlushAssumeLocked` adds one more separator plus
+the suffix to check whether the *next* event would fit, which is exact. Both the normal append
+path and the overflow/blocking path use a consistent `if (currentBatchBytes == 0) → add prefix,
+else → add separator` guard.
+
+**`drainBufferedBatches` runs under the lock**: the method body is wrapped in `doWithLock`, but
+the HTTP calls are submitted as `CompletableFuture`s and complete outside the lock. The
+`whenComplete` callback re-acquires the lock explicitly when it needs to update shared state.
+
 ### Filters
 
 See [README.MD](README.MD) for full configuration reference and usage examples.
@@ -77,3 +88,15 @@ Captures log events in tests. See [README.MD](README.MD) for usage examples.
 - Unit tests use XML log4j2 configuration files under `core/src/test/resources/` — there are 70+ such files
 - WireMock 3.x for HTTP integration tests (AsyncHttpAppender)
 - JMH benchmarks in `src/test/java/.../benchmarks/` for performance-sensitive filters
+
+**AssertJ + `Configuration.getAppender()`**: the method's unconstrained generic return type
+(`<T extends Appender> T`) creates an ambiguous overload for AssertJ's `assertThat()`.
+Always cast explicitly: `assertThat((Appender) config.getAppender("name"))`.
+
+**`AsyncHttpAppenderTest` path isolation**: each test assigns a unique WireMock path via a
+sequence counter (`wireMockPath = "/logs" + sequence.getAndIncrement()`) so that WireMock
+stub/verify calls in one test cannot interfere with another. Follow the same pattern in new tests.
+
+## Role Agentic Coding Tools
+
+Please don't change existing files unless explicitly asked.

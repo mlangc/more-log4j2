@@ -162,11 +162,11 @@ public class AsyncHttpAppender extends AbstractAppender {
         super(name, filter, layout, ignoreExceptions, properties);
 
         if (maxBatchBufferBytes <= 0) {
-            throw new IllegalArgumentException("maxBatchBufferBytes must not by <= 0, but got " + maxBatchBufferBytes);
+            throw new IllegalArgumentException("maxBatchBufferBytes must not be <= 0, but got " + maxBatchBufferBytes);
         }
 
         if (maxBatchLogEvents <= 0) {
-            throw new IllegalArgumentException("maxBatchLogEvents must not by < 0, but got " + maxBatchLogEvents);
+            throw new IllegalArgumentException("maxBatchLogEvents must not be <= 0, but got " + maxBatchLogEvents);
         }
 
         if (httpSuccessCodes.length == 0) {
@@ -374,6 +374,8 @@ public class AsyncHttpAppender extends AbstractAppender {
             if (!overflow) {
                 if (currentBatchBytes == 0) {
                     currentBatchBytes += batchPrefix.length;
+                } else {
+                    currentBatchBytes += batchSeparator.length;
                 }
 
                 currentBatch.add(eventBytes);
@@ -385,8 +387,13 @@ public class AsyncHttpAppender extends AbstractAppender {
                         remainingNanos = lockCondition.awaitNanos(remainingNanos);
 
                         if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
+                            if (currentBatchBytes == 0) {
+                                currentBatchBytes += batchPrefix.length;
+                            } else {
+                                currentBatchBytes += batchSeparator.length;
+                            }
+
                             currentBatch.add(eventBytes);
-                            currentBatchBytes += batchPrefix.length;
                             currentBatchBytes += eventBytes.length;
                             overflow = false;
                             break;
