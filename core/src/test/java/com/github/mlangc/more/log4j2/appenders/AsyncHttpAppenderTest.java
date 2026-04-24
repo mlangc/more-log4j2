@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -1865,6 +1865,42 @@ class AsyncHttpAppenderTest {
         var collectedLinesPerStatusCode = collectReceivedLinesPerStatusCode(wireMockPath);
         assertThat(collectedLinesPerStatusCode).containsOnlyKeys(200);
         assertThat(collectedLinesPerStatusCode.get(200).keySet()).isSubsetOf(expectedKeys);
+    }
+
+    @Test
+    void shouldInvokeCompletionListenerAndShutdownCleanlyEvenIfConfiguredWithInvalidHttpHeader() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("maxConcurrentRequests", 1)
+                        .addAttribute("retries", 1)
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
+                        .addComponent(configBuilder.newProperty("not a valid http header", ":-O")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        TestBatchCompletionListener listener;
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
+            listener = (TestBatchCompletionListener) appender.batchCompletionListener();
+
+            var log = context.getLogger(getClass());
+            log.info("a");
+            log.info("b");
+            log.info("c");
+
+            assertThat(appender.stop(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(listener.lastBatchCompletionEvents)
+                    .hasSize(3)
+                    .allSatisfy(evt ->
+                            assertThat(evt.type()).isInstanceOfSatisfying(
+                                    AsyncHttpAppender.BatchDeliveryFailed.class,
+                                    f -> assertThat(f.exception()).hasMessageContaining("not a valid http header")));
+        }
     }
 
     private void shouldRespectAppenderFilters(LoggerContext context) {
