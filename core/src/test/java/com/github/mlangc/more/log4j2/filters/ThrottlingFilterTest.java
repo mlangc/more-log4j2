@@ -62,6 +62,7 @@ class ThrottlingFilterTest {
         assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
         assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
         assertThat(filter.filter(LOG, Level.INFO, null, "throttled")).isEqualTo(Result.DENY);
+        assertThat(filter.filter(LOG, Level.WARN, null, "throttled")).isEqualTo(Result.DENY);
 
         assertThat(filter.filter(LOG, Level.ERROR, null, "not throttled", (Object) null)).isEqualTo(Result.ACCEPT);
         assertThat(filter.filter(LOG, Level.ERROR, null, "not throttled", null, null)).isEqualTo(Result.ACCEPT);

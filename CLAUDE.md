@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A collection of advanced plugins for Apache Log4j2 (2.25.4+): filters, appenders, and testing utilities. Published to Maven Central as `com.github.mlangc:more-log4j2`. Requires Java 17+.
+A collection of advanced plugins for Apache Log4j2: filters, appenders, and testing utilities. Published to Maven Central as `com.github.mlangc:more-log4j2`. Requires Java 17+.
 
 ## Build Commands
 
@@ -43,23 +43,39 @@ All components use Log4j2's `@Plugin` annotation and are auto-discovered via the
 
 ### AsyncHttpAppender
 
-The most complex component (~1034 LOC). Key design points:
-- Asynchronous batching with configurable batch sizes and linger time
-- Single-threaded batch draining using Java NIO `HttpClient`
-- Ring buffer absorbs traffic spikes
-- Retry logic with exponential backoff
-- Optional gzip compression, custom headers, overflow strategies
-- `BatchCompletionListener` for monitoring (avoid recursive logging — see README)
+The most complex component (~1034 LOC). See [README.MD](README.MD) for the full
+configuration reference and architecture diagram. The key implementation detail to be aware
+of when reading the code: batch draining is intentionally **single-threaded** (one drainer
+thread using the async `HttpClient` API), so any logic that touches the drain path must not
+block.
 
 ### Filters
 
-- **ThrottlingFilter** — Rate-limits log events; performance-sensitive, benchmarked with JMH
-- **RoutingFilter** — Routes events based on configurable conditions
-- **AcceptAllFilter / NeutralFilter** — Simple accept/neutral implementations
+See [README.MD](README.MD) for full configuration reference and usage examples.
+
+- **ThrottlingFilter** — Rate-limits log events; performance-sensitive, benchmarked with
+  JMH (benchmarks live under `src/test/java/.../benchmarks/`).
+  The `level` attribute is easy to misread: events *at or less specific* than the configured
+  level (e.g. WARN/INFO/DEBUG/TRACE when `level=WARN`) are counted against the limit;
+  events *more specific* (e.g. ERROR/FATAL when `level=WARN`) bypass the throttle entirely
+  and always return `onMatch`. This matches `BurstFilter` semantics.
+- **RoutingFilter** — Evaluates `FilterRoute` entries in order; the first whose
+  `FilterRouteIf` filter returns `ACCEPT` wins and its `FilterRouteThen` filter is applied.
+  Falls back to `DefaultFilterRoute`. `getOnMatch()`/`getOnMismatch()` intentionally throw
+  `UnsupportedOperationException`.
+- **AcceptAllFilter / NeutralFilter** — Always return `ACCEPT`/`NEUTRAL`; complement the
+  mainline `DenyAllFilter`.
+
+### Plugin factory conventions
+
+`@PluginFactory` methods follow these conventions:
+
+- **Optional attributes** with a sensible default (e.g. `onMatch`, `level`) receive an explicit null-fallback inline: `onMatch == null ? Result.NEUTRAL : onMatch`.
+- **Mandatory attributes** (e.g. `interval`, `timeUnit`, `maxEvents`) are *not* null-checked. If a caller omits them, the resulting NPE — surfaced by Log4j2 via its status logger — is considered descriptive enough. Adding custom validation would be noise without diagnostic value.
 
 ### LogCaptor API
 
-Captures log events in tests. Modeled after the `log-captor` library pattern.
+Captures log events in tests. See [README.MD](README.MD) for usage examples.
 
 ## Testing Approach
 
