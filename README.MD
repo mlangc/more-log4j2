@@ -581,7 +581,7 @@ carefully:
 
 ### Capturing Appender
 
-The `CaptoringAppender` is meant to be used along with the `com.github.mlangc.more.log4j2.captor.LogCaptor` API, which is modeled
+The `CapturingAppender` is meant to be used along with the `com.github.mlangc.more.log4j2.captor.LogCaptor` API, which is modeled
 after the
 [LogCaptor](https://github.com/Hakky54/log-captor) library. Unlike the latter, it works exclusively with `log4j2`, and doesn't
 force you to switch to `logback` for your tests. To use it, first adapt your `log4j2-test.xml` according to the following example:

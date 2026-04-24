@@ -43,26 +43,21 @@ All components use Log4j2's `@Plugin` annotation and are auto-discovered via the
 
 ### AsyncHttpAppender
 
-The most complex component (~1034 LOC). See [README.MD](README.MD) for the full
-configuration reference and architecture diagram. The key implementation detail to be aware
-of when reading the code: batch draining is intentionally **single-threaded** (one drainer
-thread using the async `HttpClient` API), so any logic that touches the drain path must not
-block.
+See [README.MD](README.MD) for the full configuration reference and architecture diagram.
+The key implementation detail to be aware of when reading the code: batch draining is
+intentionally **single-threaded** (one drainer thread using the async `HttpClient` API), so
+any logic that touches the drain path must not block.
 
 ### Filters
 
 See [README.MD](README.MD) for full configuration reference and usage examples.
 
-- **ThrottlingFilter** — Rate-limits log events; performance-sensitive, benchmarked with
-  JMH (benchmarks live under `src/test/java/.../benchmarks/`).
-  The `level` attribute is easy to misread: events *at or less specific* than the configured
-  level (e.g. WARN/INFO/DEBUG/TRACE when `level=WARN`) are counted against the limit;
-  events *more specific* (e.g. ERROR/FATAL when `level=WARN`) bypass the throttle entirely
-  and always return `onMatch`. This matches `BurstFilter` semantics.
-- **RoutingFilter** — Evaluates `FilterRoute` entries in order; the first whose
-  `FilterRouteIf` filter returns `ACCEPT` wins and its `FilterRouteThen` filter is applied.
-  Falls back to `DefaultFilterRoute`. `getOnMatch()`/`getOnMismatch()` intentionally throw
-  `UnsupportedOperationException`.
+- **ThrottlingFilter** — Rate-limits log events. The `level` attribute is easy to misread: events *at or
+  less specific* than the configured level (e.g. WARN/INFO/DEBUG/TRACE when `level=WARN`)
+  are counted against the limit; events *more specific* (e.g. ERROR/FATAL when `level=WARN`)
+  bypass the throttle entirely and always return `onMatch`. This matches `BurstFilter`
+  semantics. Performance-sensitive; JMH benchmarks live under `src/test/java/.../benchmarks/`.
+- **RoutingFilter** — `getOnMatch()`/`getOnMismatch()` intentionally throw `UnsupportedOperationException`.
 - **AcceptAllFilter / NeutralFilter** — Always return `ACCEPT`/`NEUTRAL`; complement the
   mainline `DenyAllFilter`.
 
