@@ -50,6 +50,8 @@ import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
 import org.apache.logging.log4j.core.filter.BurstFilter;
 import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.apache.logging.log4j.core.lookup.JavaLookup;
+import org.apache.logging.log4j.status.StatusData;
+import org.apache.logging.log4j.status.StatusListener;
 import org.apache.logging.log4j.status.StatusLogger;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.*;
@@ -76,6 +78,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
@@ -1936,10 +1939,9 @@ class AsyncHttpAppenderTest {
                         .addComponent(configBuilder.newProperty("not a valid http header", ":-O")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
-        TestBatchCompletionListener listener;
         try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
             var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
-            listener = (TestBatchCompletionListener) appender.batchCompletionListener();
+            var listener = (TestBatchCompletionListener) appender.batchCompletionListener();
 
             var log = context.getLogger(getClass());
             log.info("a");
@@ -1953,6 +1955,79 @@ class AsyncHttpAppenderTest {
                             assertThat(evt.type()).isInstanceOfSatisfying(
                                     AsyncHttpAppender.BatchDeliveryFailed.class,
                                     f -> assertThat(f.exception()).hasMessageContaining("not a valid http header")));
+        }
+    }
+
+    static class ThrowingCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+        static final String ERR_MSG = ":-O";
+
+        final AtomicInteger completionEvents = new AtomicInteger();
+
+        @Override
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent ignore) {
+            completionEvents.incrementAndGet();
+            throw new RuntimeException(ERR_MSG);
+        }
+    }
+
+    @Test
+    void shouldDealWithBrokenCompletionListenerSensibly() {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("batchCompletionListener", ThrowingCompletionListener.class.getName())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        var completionListenerRelatedStatusErrorEvents = new AtomicInteger();
+        var statusListener = new StatusListener() {
+            @Override
+            public void close() {
+
+            }
+
+            @Override
+            public void log(StatusData data) {
+                if (data.getLevel() == Level.WARN
+                    && data.getThrowable() != null
+                    && data.getThrowable().getMessage() != null
+                    && data.getThrowable().getMessage().contains(ThrowingCompletionListener.ERR_MSG)) {
+                    completionListenerRelatedStatusErrorEvents.incrementAndGet();
+                }
+            }
+
+            @Override
+            public Level getStatusLevel() {
+                return Level.WARN;
+            }
+        };
+
+        StatusLogger.getLogger().registerListener(statusListener);
+        try {
+            ThrowingCompletionListener listener;
+            try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+                var log = context.getLogger(getClass());
+                listener = (ThrowingCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+
+                log.info("x");
+                log.info("y");
+                log.info("z");
+            }
+
+            // It is possible to reach this point shortly before completion listeners are being notified.
+            // Waiting a bit avoids flakiness.
+            Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                assertThat(completionListenerRelatedStatusErrorEvents).hasValue(3);
+                assertThat(listener.completionEvents).hasValue(3);
+            });
+
+            assertThat(collectReceivedLinesPerStatusCode(wireMockPath)).isEqualTo(Map.of(200, Map.of("x", 1, "y", 1, "z", 1)));
+        } finally {
+            StatusLogger.getLogger().removeListener(statusListener);
         }
     }
 

@@ -554,11 +554,15 @@ public class AsyncHttpAppender extends AbstractAppender {
                     }
 
                     if (completionType != null) {
-                        batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
-                                this,
-                                new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot,
-                                        retryStats.tries(), retryStats.backoffNanos(), retryStats.requestNanos(), retryStats.totalNanos()),
-                                completionType));
+                        try {
+                            batchCompletionListener.onBatchCompletionEvent(new BatchCompletionEvent(
+                                    this,
+                                    new BatchCompletionStats(uncompressedBytes, releaseBytes, logEvents, bufferBytesSnapshot, bufferedBatchesSnapshot,
+                                            retryStats.tries(), retryStats.backoffNanos(), retryStats.requestNanos(), retryStats.totalNanos()),
+                                    completionType));
+                        } catch (Exception e) {
+                            getStatusLogger().warn("Exception from completion listener called from {}", this, e);
+                        }
                     }
                 });
             }
