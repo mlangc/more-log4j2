@@ -358,17 +358,15 @@ public class AsyncHttpAppender extends AbstractAppender {
         try {
             var overflow = false;
             if (currentBatch.isEmpty()) {
-                firstRecordNanos = ticker.nanoTime();
-
-                if (scheduledFlush != null) {
-                    scheduledFlush.cancel(false);
-                }
-
-                scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
+                rescheduleFlushAssumeLocked();
             }
 
             if (needsFlushAssumeLocked(eventBytes)) {
                 overflow = !tryFlushAssumingLocked();
+
+                if (!overflow) {
+                    rescheduleFlushAssumeLocked();
+                }
             }
 
             if (!overflow) {
@@ -396,6 +394,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                             currentBatch.add(eventBytes);
                             currentBatchBytes += eventBytes.length;
                             overflow = false;
+                            rescheduleFlushAssumeLocked();
                             break;
                         }
                     } while (remainingNanos > 0);
@@ -417,6 +416,16 @@ public class AsyncHttpAppender extends AbstractAppender {
         if (useOverflowAppenderControl != null) {
             useOverflowAppenderControl.callAppender(event);
         }
+    }
+
+    private void rescheduleFlushAssumeLocked() {
+        firstRecordNanos = ticker.nanoTime();
+
+        if (scheduledFlush != null) {
+            scheduledFlush.cancel(false);
+        }
+
+        scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
     }
 
     private boolean needsFlushAssumeLocked(byte[] eventBytes) {
@@ -457,6 +466,11 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     private void flushIfLingerElapsed() {
         doWithLock(() -> {
+            // Implementation note: This is meant to null out the future that is responsible for this execution.
+            // It might in rare cases null out another future though. This is OK and has no impact on the
+            // correctness of the code, since the actual flushing is anyway protected by an additional check.
+            scheduledFlush = null;
+
             if (currentBatch.isEmpty()) {
                 return;
             }

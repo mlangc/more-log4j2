@@ -2031,6 +2031,53 @@ class AsyncHttpAppenderTest {
         }
     }
 
+    static class NanoTimeRecordingTestBatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+        record CompletionEventWithNanoTime(AsyncHttpAppender.BatchCompletionEvent event, long nanoTime) { }
+        final ConcurrentLinkedDeque<CompletionEventWithNanoTime> completionEvents = new ConcurrentLinkedDeque<>();
+
+        @Override
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent completionEvent) {
+            completionEvents.add(new CompletionEventWithNanoTime(completionEvent, System.nanoTime()));
+        }
+    }
+
+    @Test
+    void shouldRespectLingerMsAfterSizeBasedFlush() throws InterruptedException {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+
+        var lingerMs = 250;
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("lingerMs", lingerMs)
+                        .addAttribute("batchPrefix", "")
+                        .addAttribute("batchSuffix", "")
+                        .addAttribute("batchSeparator", "")
+                        .addAttribute("maxBatchBytes", 3)
+                        .addAttribute("batchCompletionListener", NanoTimeRecordingTestBatchCompletionListener.class.getName())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var log = context.getLogger(getClass());
+            var listener = (NanoTimeRecordingTestBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+
+            log.info("xx");
+            Thread.sleep(lingerMs / 2);
+
+            var t0 = System.nanoTime();
+            log.info("xx");
+            Awaitility.await().atMost(4 * lingerMs, TimeUnit.MILLISECONDS).untilAsserted(() -> assertThat(listener.completionEvents).hasSize(2));
+
+            var evt0 = listener.completionEvents.getFirst();
+            var evt1 = listener.completionEvents.getLast();
+            assertThat(evt0.event.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveredSuccess.class);
+            assertThat(evt1.event.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveredSuccess.class);
+            assertThat(t0 + Math.round(TimeUnit.MILLISECONDS.toNanos(lingerMs) * 0.95)).isLessThanOrEqualTo(evt1.nanoTime);
+        }
+    }
+
     private void shouldRespectAppenderFilters(LoggerContext context) {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 
