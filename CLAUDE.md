@@ -48,12 +48,16 @@ The key implementation detail to be aware of when reading the code: batch draini
 intentionally **single-threaded** (one drainer thread using the async `HttpClient` API), so
 any logic that touches the drain path must not block.
 
-**`currentBatchBytes` accounting**: this field tracks
-`batchPrefix.length + (N−1)×batchSeparator.length + Σ(event bytes)` — i.e. it includes the
-separators between already-added events. `needsFlushAssumeLocked` adds one more separator plus
-the suffix to check whether the *next* event would fit, which is exact. Both the normal append
-path and the overflow/blocking path use a consistent `if (currentBatchBytes == 0) → add prefix,
-else → add separator` guard.
+**`currentBatchBytes` accounting**: tracks the exact serialized size of the in-progress batch
+(prefix + events + only those separators that `createBatchAssumingLocked` would actually write
+under the configured `batchSeparatorInsertionStrategy`). The `append` paths and
+`needsFlushAssumeLocked` consult `needSeparatorAssumeLocked` so the accounting and the
+flush-fits-check both match `createBatchAssumingLocked`'s layout exactly under both `ALWAYS`
+and `IF_MISSING`.
+
+**Linger anchor**: `firstRecordNanos` and `scheduledFlush` are reset together via
+`rescheduleFlushAssumeLocked` — call it from any new code path that empties `currentBatch`
+and lets a new batch start.
 
 **`drainBufferedBatches` runs under the lock**: the method body is wrapped in `doWithLock`, but
 the HTTP calls are submitted as `CompletableFuture`s and complete outside the lock. The
@@ -97,6 +101,7 @@ Always cast explicitly: `assertThat((Appender) config.getAppender("name"))`.
 sequence counter (`wireMockPath = "/logs" + sequence.getAndIncrement()`) so that WireMock
 stub/verify calls in one test cannot interfere with another. Follow the same pattern in new tests.
 
-## Role Agentic Coding Tools
+## Role of Coding Agents
 
-Please don't change existing files unless explicitly asked.
+Please don't change existing files unless explicitly asked. Feel free to add files, or perform temporary changes if that helps
+you to figure things out. For the time being, your role is primarily that of a reviewer.
