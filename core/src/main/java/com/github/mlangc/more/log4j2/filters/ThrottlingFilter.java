@@ -37,8 +37,6 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static java.util.Objects.requireNonNull;
-
 @Plugin(name = "ThrottlingFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
 @PerformanceSensitive("allocation")
 public class ThrottlingFilter extends AbstractFilter {
@@ -54,12 +52,20 @@ public class ThrottlingFilter extends AbstractFilter {
         this(onMatch, onMismatch, level, intervalNanos, maxEvents, System::nanoTime);
     }
 
-    ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEventsPerInterval, NanoClock nanoClock) {
+    ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEvents, NanoClock nanoClock) {
         super(onMatch, onMismatch);
+
+        if (intervalNanos <= 0) {
+            throw new IllegalArgumentException("interval must be positive");
+        }
+
+        if (maxEvents <= 0) {
+            throw new IllegalArgumentException("maxEvents must be positive");
+        }
 
         this.level = level;
         this.intervalNanos = intervalNanos;
-        this.maxEvents = maxEventsPerInterval;
+        this.maxEvents = maxEvents;
         this.nanoClock = nanoClock;
         this.eventCounter = new AtomicLong();
 
@@ -156,7 +162,7 @@ public class ThrottlingFilter extends AbstractFilter {
                 onMismatch == null ? Result.DENY : onMismatch,
                 level == null ? Level.WARN : level,
                 timeUnit.toNanos(interval),
-                requireNonNull(maxEvents)
+                maxEvents
         );
     }
 
@@ -168,7 +174,7 @@ public class ThrottlingFilter extends AbstractFilter {
         long t = nanoClock.nanoTime();
         while (true) {
             long t0 = startTicks.get();
-            if (t0 + intervalNanos > t) {
+            if (t - t0 < intervalNanos) {
                 if (eventCounter.get() >= maxEvents) {
                     return onMismatch;
                 }

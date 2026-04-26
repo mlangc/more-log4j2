@@ -28,19 +28,21 @@ import org.apache.logging.log4j.core.Filter.Result;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
 import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
 import org.apache.logging.log4j.core.test.junit.Named;
 import org.apache.logging.log4j.spi.ExtendedLogger;
+import org.apache.logging.log4j.status.StatusData;
+import org.apache.logging.log4j.status.StatusListener;
+import org.apache.logging.log4j.status.StatusLogger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -221,5 +223,51 @@ class ThrottlingFilterTest {
         Thread.sleep(intervalMillis + 1);
         TestHelpers.logWithAllOverloads(log, null, "three");
         assertThat(countingAppender.currentCount()).isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,0", "0,5", "5,0", "-1,-1", "-1,2", "2,-1"})
+    void shouldRejectIllegalIntervalAndMaxEvents(int intervalMs, int maxEvents) {
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newFilter("ThrottlingFilter", Result.NEUTRAL, Result.DENY)
+                        .addAttribute("interval", intervalMs)
+                        .addAttribute("maxEvents", maxEvents)
+                        .addAttribute("timeUnit", TimeUnit.MILLISECONDS))
+                .add(configBuilder.newAppender("Null", "Null"))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("Null")));
+
+        var statusListener = new StatusListener() {
+            private final ConcurrentLinkedDeque<Throwable> errors = new ConcurrentLinkedDeque<>();
+
+            @Override
+            public void close() {
+
+            }
+
+            @Override
+            public void log(StatusData data) {
+                if (data.getThrowable() != null) {
+                    errors.add(data.getThrowable());
+                }
+            }
+
+            @Override
+            public Level getStatusLevel() {
+                return Level.INFO;
+            }
+        };
+
+        StatusLogger.getLogger().registerListener(statusListener);
+        try {
+            try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+                assertThat(context.getConfiguration().getFilter()).isNull();
+                assertThat(statusListener.errors)
+                        .isNotEmpty()
+                        .allSatisfy(e -> assertThat(e).rootCause().hasStackTraceContaining(ThrottlingFilter.class.getName()));
+            }
+        } finally {
+            StatusLogger.getLogger().removeListener(statusListener);
+        }
     }
 }
