@@ -466,11 +466,6 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     private void flushIfLingerElapsed() {
         doWithLock(() -> {
-            // Implementation note: This is meant to null out the future that is responsible for this execution.
-            // It might in rare cases null out another future though. This is OK and has no impact on the
-            // correctness of the code, since the actual flushing is anyway protected by an additional check.
-            scheduledFlush = null;
-
             if (currentBatch.isEmpty()) {
                 return;
             }

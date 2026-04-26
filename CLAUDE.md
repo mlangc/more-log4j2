@@ -58,6 +58,8 @@ and `IF_MISSING`.
 **Linger anchor**: `firstRecordNanos` and `scheduledFlush` are reset together via
 `rescheduleFlushAssumeLocked` — call it from any new code path that empties `currentBatch`
 and lets a new batch start.
+Do not null `scheduledFlush` on task completion — only the shutdown path does. A stale fire
+nulling a freshly-rescheduled future would defeat the next `cancel(false)`.
 
 **`drainBufferedBatches` runs under the lock**: the method body is wrapped in `doWithLock`, but
 the HTTP calls are submitted as `CompletableFuture`s and complete outside the lock. The
