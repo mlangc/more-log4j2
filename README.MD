@@ -121,6 +121,10 @@ themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (⚠️ `NE
 `FilterRouteThen` is taken and all remaining `FilterRoute` elements, as well as the mandatory `DefaultFilterRoute`
 are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
 
+> ℹ️ Using filters where calling `filter()` has a side effect in `FilterRouteIf` such as [ThrottlingFilter](#throttling-filter)
+> or [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter) is possible, but might lead to complex
+> interactions.
+
 In Java, the behavior of the filter can be summarized as follows:
 
 ```java
