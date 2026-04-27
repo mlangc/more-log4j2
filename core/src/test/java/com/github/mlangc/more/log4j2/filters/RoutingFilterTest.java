@@ -26,15 +26,18 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
 import org.apache.logging.log4j.core.test.junit.Named;
+import org.apache.logging.log4j.core.test.junit.ReconfigurationPolicy;
 import org.apache.logging.log4j.spi.ExtendedLogger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.TimeUnit;
 
 import static com.github.mlangc.more.log4j2.test.helpers.TestHelpers.logWithAllOverloads;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
-@LoggerContextSource("RoutingFilterTest.xml")
+@LoggerContextSource(value = "RoutingFilterTest.xml", reconfigure = ReconfigurationPolicy.AFTER_EACH)
 class RoutingFilterTest {
     static final Marker COLORED = MarkerManager.getMarker("color");
     static final Marker RED = MarkerManager.getMarker("red").addParents(COLORED);
@@ -157,5 +160,28 @@ class RoutingFilterTest {
         RoutingFilter routingFilter = (RoutingFilter) loggerContext.getConfiguration().getFilter();
         assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMatch);
         assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMismatch);
+    }
+
+    @Test
+    void childFiltersShouldBeStartedAndStopped() {
+        var routingFilter = (RoutingFilter) loggerContext.getConfiguration().getFilter();
+
+        assertThat(routingFilter.isStarted()).isTrue();
+        assertThat(routingFilter.defaultFilterRoute().filter().isStarted()).isTrue();
+        assertThat(routingFilter.filterRoutes())
+                .allSatisfy(filterRoute -> {
+                    assertThat(filterRoute.filterRouteIf().filter().isStarted()).isTrue();
+                    assertThat(filterRoute.filterRouteThen().filter().isStarted()).isTrue();
+                });
+
+        assertThat(loggerContext.stop(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(routingFilter.isStarted()).isFalse();
+        assertThat(routingFilter.defaultFilterRoute().filter().isStarted()).isFalse();
+        assertThat(routingFilter.filterRoutes())
+                .allSatisfy(filterRoute -> {
+                    assertThat(filterRoute.filterRouteIf().filter().isStarted()).isFalse();
+                    assertThat(filterRoute.filterRouteThen().filter().isStarted()).isFalse();
+                });
     }
 }

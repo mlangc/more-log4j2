@@ -22,10 +22,7 @@ package com.github.mlangc.more.log4j2.filters;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.Marker;
-import org.apache.logging.log4j.core.AbstractLifeCycle;
-import org.apache.logging.log4j.core.Filter;
-import org.apache.logging.log4j.core.LogEvent;
-import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.*;
 import org.apache.logging.log4j.core.config.Node;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginElement;
@@ -34,6 +31,7 @@ import org.apache.logging.log4j.message.Message;
 import org.apache.logging.log4j.util.PerformanceSensitive;
 
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.requireNonNull;
 
@@ -167,6 +165,44 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
             @PluginElement("FilterRoute") FilterRoute... filterRoutes
     ) {
         return new RoutingFilter(defaultFilterRoute, filterRoutes);
+    }
+
+    @Override
+    public void start() {
+        setStarting();
+        defaultFilterRoute.filter.start();
+        for (var filterRoute : filterRoutes) {
+            filterRoute.filterRouteIf.filter.start();
+            filterRoute.filterRouteThen.filter.start();
+        }
+        setStarted();
+    }
+
+    @Override
+    public boolean stop(long timeout, TimeUnit timeUnit) {
+        setStopping();
+
+        // Implementation note: Forwarding the timeout directly to children without tracking the remaining
+        // time is consistent with the log4j2 codebase (see for example CompositeFilter#stop).
+        var stoppedCleanly = true;
+        stoppedCleanly &= stopFilter(defaultFilterRoute.filter, timeout, timeUnit);
+
+        for (var filterRoute : filterRoutes) {
+            stoppedCleanly &= stopFilter(filterRoute.filterRouteIf.filter, timeout, timeUnit);
+            stoppedCleanly &= stopFilter(filterRoute.filterRouteThen.filter, timeout, timeUnit);
+        }
+
+        setStopped();
+        return stoppedCleanly;
+    }
+
+    private boolean stopFilter(Filter filter, long timeout, TimeUnit timeUnit) {
+        if (filter instanceof LifeCycle2 lifeCycle2) {
+            return lifeCycle2.stop(timeout, timeUnit);
+        } else {
+            filter.stop();
+            return true;
+        }
     }
 
     @Override
@@ -354,5 +390,9 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
 
     FilterRoute[] filterRoutes() {
         return filterRoutes;
+    }
+
+    DefaultFilterRoute defaultFilterRoute() {
+        return defaultFilterRoute;
     }
 }
