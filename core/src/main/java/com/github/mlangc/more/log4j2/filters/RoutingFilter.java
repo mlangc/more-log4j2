@@ -213,14 +213,20 @@ public class RoutingFilter extends AbstractLifeCycle implements Filter {
                '}';
     }
 
+    /**
+     * Routing decisions are delegated to each route's own filter.
+     */
     @Override
     public Result getOnMismatch() {
-        throw new UnsupportedOperationException();
+        return Result.NEUTRAL;
     }
 
+    /**
+     * Routing decisions are delegated to each route's own filter.
+     */
     @Override
     public Result getOnMatch() {
-        throw new UnsupportedOperationException();
+        return Result.NEUTRAL;
     }
 
     @Override

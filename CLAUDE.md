@@ -74,7 +74,7 @@ See [README.MD](README.MD) for full configuration reference and usage examples.
   are counted against the limit; events *more specific* (e.g. ERROR/FATAL when `level=WARN`)
   bypass the throttle entirely and always return `onMatch`. This matches `BurstFilter`
   semantics. Performance-sensitive; JMH benchmarks live under `src/test/java/.../benchmarks/`.
-- **RoutingFilter** — `getOnMatch()`/`getOnMismatch()` intentionally throw `UnsupportedOperationException`.
+- **RoutingFilter** — `getOnMatch()`/`getOnMismatch()` return `NEUTRAL`; routing decisions are delegated to each route's own filter.
 - **AcceptAllFilter / NeutralFilter** — Always return `ACCEPT`/`NEUTRAL`; complement the
   mainline `DenyAllFilter`.
 
