@@ -117,7 +117,7 @@ want to be on the safe side, and reliably avoid log spam. Then `RoutingFilter` c
 
 `RoutingFilter` has no attributes, and is configured by its nested `FilterRoute` and `DefaultFilterRoute` elements:
 Each `FilterRoute` must contain two child elements, `FilterRouteIf` and `FilterRouteThen` and both of them must contain filters
-themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (note that `NEUTRAL` is not enough), the filter branch in
+themselves. If the nested filter in `FilterRouteIf` returns `ACCEPT` (⚠️ `NEUTRAL` is not enough), the filter branch in
 `FilterRouteThen` is taken and all remaining `FilterRoute` elements, as well as the mandatory `DefaultFilterRoute`
 are skipped. If no `FilterRoute` matches, the filters in `DefaultFilterRoute` are applied.
 
@@ -140,6 +140,14 @@ Whenever you are free to reorder `FilterRoute` elements because their matching s
 that makes your config the most readable. Putting the most commonly taken routes first might save you a few CPU cycles, however,
 apart from extreme cases, where millions of logs are filtered down to a handful of lines every second, this won't make any
 difference.
+
+#### Why does FilterRouteIf require ACCEPT?
+
+As mentioned above, a `FilterRoute` is only taken if it is the first route containing a nested `FilterRouteIf`,
+that evaluates to `ACCEPT`. This might seem counter-intuitive, since `onMatch=NEUTRAL`
+[by default](https://logging.apache.org/log4j/2.x/manual/filters.html#common-configuration-attributes).
+Choosing the first route where `FilterRouteIf` returns `NEUTRAL` even though a later route returns `ACCEPT`, would be
+equally surprising. Requiring `ACCEPT` seems like the lesser evil to me, but I'm open for user feedback on this question.
 
 ### AcceptAllFilter & NeutralFilter
 
