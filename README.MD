@@ -26,13 +26,13 @@ the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at 
     * [more-log4j2-junit](#more-log4j2-junit)
     * [more-log4j2-bom](#more-log4j2-bom)
 
-### Routing Filter
+## Routing Filter
 
 I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases, that go beyond what you can do with standard
 log4j2, unless you fall back to using [ScriptFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#Script), or write a
 plugin, as I did.
 
-#### Use Case I: Marker Based Log Throttling
+### Use Case I: Marker Based Log Throttling
 
 After defining a global filter, like
 
@@ -83,7 +83,7 @@ void anywhere() {
 }
 ```
 
-#### Use Case II: Throttling DEBUG Logs
+### Use Case II: Throttling DEBUG Logs
 
 Let's imagine that you want to enable `DEBUG` or `TRACE` logs for parts your application or library code. At the same time, you
 want to be on the safe side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
@@ -113,7 +113,7 @@ want to be on the safe side, and reliably avoid log spam. Then `RoutingFilter` c
 </Configuration>
 ```
 
-#### RoutingFilter Reference Documentation
+### RoutingFilter Reference Documentation
 
 `RoutingFilter` has no attributes, and is configured by its nested `FilterRoute` and `DefaultFilterRoute` elements:
 Each `FilterRoute` must contain two child elements, `FilterRouteIf` and `FilterRouteThen` and both of them must contain filters
@@ -141,7 +141,7 @@ that makes your config the most readable. Putting the most commonly taken routes
 apart from extreme cases, where millions of logs are filtered down to a handful of lines every second, this won't make any
 difference.
 
-#### Why does FilterRouteIf require ACCEPT?
+### Why does FilterRouteIf require ACCEPT?
 
 As mentioned above, a `FilterRoute` is only taken if it is the first route containing a nested `FilterRouteIf`,
 that evaluates to `ACCEPT`. This might seem counter-intuitive, since `onMatch=NEUTRAL`
@@ -149,7 +149,7 @@ that evaluates to `ACCEPT`. This might seem counter-intuitive, since `onMatch=NE
 Choosing the first route where `FilterRouteIf` returns `NEUTRAL` even though a later route returns `ACCEPT`, would be
 equally surprising. Requiring `ACCEPT` seems like the lesser evil to me, but I'm open for user feedback on this question.
 
-### AcceptAllFilter & NeutralFilter
+## AcceptAllFilter & NeutralFilter
 
 These two filters don't have any options, and always return either `ACCEPT` or `NEUTRAL`. They complement
 [DenyAllFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#deny-filter), which exists in mainline log4j2, and are
@@ -160,7 +160,7 @@ especially useful in connection with `RoutingFilter`.
 `ThrottlingFilter` is an alternative to [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter), that
 provides roughly the same functionality, but with less overhead and without object allocations. Let's look at a few examples:
 
-#### Throttling WARN and below to at most one log per second:
+### Throttling WARN and below to at most one log per second:
 
 ```xml
 
@@ -174,7 +174,7 @@ This is roughly what you get with
 <BurstFilter rate="1" maxBurst="1"/>
 ```
 
-#### Throttling DEBUG to at most 1 log per second, but allowing bursts up to 10
+### Throttling DEBUG to at most 1 log per second, but allowing bursts up to 10
 
 ```xml
 
@@ -188,7 +188,7 @@ This is roughly what you get with
 <BurstFilter rate="1" maxBurst="10" level="debug"/>
 ```
 
-#### ThrottlingFilter Configuration
+### ThrottlingFilter Configuration
 
 | Attribute | Type                           | Default | Description                                                     |
 |-----------|--------------------------------|---------|-----------------------------------------------------------------|
@@ -202,7 +202,7 @@ allows at most `maxEvents` logs in each interval. Note that this is subtly diffe
 sliding window of length `maxBurst / rate` seconds, and allows at most `maxBurst` logs in this window. For most practical
 purposes, this difference should be negligible.
 
-#### Performance Comparison to BurstFilter
+### Performance Comparison to BurstFilter
 
 The most important performance related difference between `BurstFilter` and `ThrottlingFilter`, is that the latter is garbage free
 during steady state logging (see [here](https://logging.apache.org/log4j/2.x/manual/garbagefree.html#Filters) for mainline log4j2
@@ -220,13 +220,13 @@ repository.
 Finally, it's important to keep things in perspective: None of this matters, unless millions of logs are filtered out per second,
 or you are extremely sensitive about allocations.
 
-### Async HttpAppender
+## Async HttpAppender
 
 A high throughput asynchronous HTTP appender, that supports batching and compression. It can be used to publish logs to popular
 log monitoring solutions, like [Dynatrace](#Publishing-Logs-To-Dynatrace), [Datadog](#Publishing-Logs-To-Datadog) and
 [Grafana](#Publishing-Logs-To-Grafana) and is able to deliver considerable log volumes with very little overhead.
 
-#### Overall Architecture
+### Overall Architecture
 
 In order to better understand the impact of the various configuration options the appender offers, it is useful to have a brief
 look at its overall architecture:
@@ -242,7 +242,7 @@ the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/ap
 The purpose of the batch buffer is to absorb short log bursts, and backend hiccups. It is expected to be empty or almost empty
 under normal conditions.
 
-#### What if the backend is not keeping up?
+### What if the backend is not keeping up?
 
 If the backend is not keeping up, unsent batches accumulate in the batch buffer, which is limited by the
 `maxBatchBufferBatches` and `maxBatchBufferBytes` options. If the buffer overflows, you have 3 options:
@@ -256,7 +256,7 @@ If the backend is not keeping up, unsent batches accumulate in the batch buffer,
    nested `OverflowAppenderRef`. Note that only events that cannot be enqueued are forwarded to this appender; the log events in
    the already queued batches will never be forwarded to the overflow appender.
 
-#### What if the backend is unreliable, or temporary unavailable?
+### What if the backend is unreliable, or temporary unavailable?
 
 The `AsyncHttpAppender` implements retries with randomized, exponential backoff. You can control retry behavior using these
 options: `retries`, `maxBackoffMs`, `httpRetryCodes` and `retryOnIoError`.
@@ -267,7 +267,7 @@ events in this batch are lost. This will be accompanied by a warning being logge
 happens by configuring a custom `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` using the
 `batchCompletionListener` option for monitoring purposes.
 
-#### Will I loose logs on shutdown?
+### Will I loose logs on shutdown?
 
 Depending on your setup you might want to set
 [log4j2.shutdownHookEnabled](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled)
@@ -276,7 +276,7 @@ on your classpath (see
 [log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how long
 the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
 
-#### I've set `log4j2.shutdownHookEnabled`, but I'm still loosing some logs when my tests are shutdown.
+### I've set `log4j2.shutdownHookEnabled`, but I'm still loosing some logs when my tests are shutdown.
 
 This might be because Spring
 uses [a custom property source](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html)
@@ -287,7 +287,7 @@ To make sure that the appender is flushed whenever your junit test suite is term
 [TestExecutionListener](https://docs.junit.org/6.0.1/api/org.junit.platform.launcher/org/junit/platform/launcher/TestExecutionListener.html)
 via the [ServiceLoader facility](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/ServiceLoader.html).
 
-#### Will I loose logs if the application crashes?
+### Will I loose logs if the application crashes?
 
 Yes, there is no way an asynchronous appender can make sure that buffers are drained if the application crashes. However, there
 are some configuration options that have an influence on the amount of logs that might be lost:
@@ -301,7 +301,7 @@ are some configuration options that have an influence on the amount of logs that
 However, if you are worrying about lost logs in the event of an application crash, `AsyncHttpAppender` is probably [not the 
 right tool for your use case](#should-i-use-the-asynchttpappender-in-production).
 
-#### Should I use the AsyncHttpAppender in production?
+### Should I use the AsyncHttpAppender in production?
 
 Most likely not, since ingesting logs from within the logging application itself has some drawbacks, that even the best possible
 appender implementation cannot mitigate. Log aggregation and forwarding in production like setups is typically addressed by
@@ -309,7 +309,7 @@ dedicated components, that collect, enrich, aggregate and forward logs from mult
 
 However, setting up this kind of infrastructure on your local machine is overkill, and might not be possible.
 
-#### Performance
+### Performance
 
 In principle, the `AsyncHttpAppender` can sustain throughputs similar to a file appender, in the ballpark of millions of log
 events per second, if the configured HTTP backend is able to absorb the traffic fast enough.
@@ -321,7 +321,7 @@ attributes like hostnames, service names and so on, setting
 `contentEncoding="gzip"` is recommended, since this trades a small amount of CPU time for a significant reduction in network
 traffic.
 
-#### Memory Usage & Churn
+### Memory Usage & Churn
 
 Memory usage of the appender is controlled by `maxBatchBufferBytes`, which defaults to `50 * maxBatchBytes + 250_000`. My advice
 is to not tweak `maxBatchBufferBytes`, but only `maxBatchBytes`.
@@ -329,7 +329,7 @@ is to not tweak `maxBatchBufferBytes`, but only `maxBatchBytes`.
 The churn is dominated by temporary byte arrays that are used as a backing storage for rendered log events and batches. It should
 be possible to reduce it significantly, however I decided to keep that for a future release.
 
-#### Publishing Logs to Dynatrace
+### Publishing Logs to Dynatrace
 
 To publish logs to the
 [Dynatrace Log Monitoring API v2](https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/environment-api/log-monitoring-v2/post-ingest-logs)
@@ -408,7 +408,7 @@ you can use the following recipe:
   </Configuration>
   ```
 
-#### Publishing Logs to Datadog
+### Publishing Logs to Datadog
 
 To publish logs to the
 [Datadog V2 Log Ingest API](https://docs.datadoghq.com/api/latest/logs/)
@@ -475,7 +475,7 @@ you can use the following recipe:
   </Configuration>
   ```
 
-#### Publishing Logs to Grafana
+### Publishing Logs to Grafana
 
 To publish logs to
 [Grafana Loki](https://grafana.com/docs/loki/latest/reference/loki-http-api/#ingest-logs)
@@ -538,7 +538,7 @@ you can use the following recipe:
   </Configuration>
   ```
 
-#### Configuration
+### Configuration
 
 | Parameter                       | Type                                                | Default Value                  | Required | Description                                                                                                                                     | Expert Only (not to be tweaked unless for specific needs) |
 |---------------------------------|-----------------------------------------------------|--------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
@@ -573,7 +573,7 @@ you can use the following recipe:
 | ignoreExceptions                | boolean                                             | true                           | No       | Ignore exceptions during logging                                                                                                                | Yes                                                       |
 | batchCompletionListener         | String                                              | null                           | No       | Class name for custom batch completion listener                                                                                                 | Yes                                                       |
 
-#### Read this if you want to play with the `batchCompletionListener` option
+### Read this if you want to play with the `batchCompletionListener` option
 
 The `AsyncHttpAppender` can expose internal data for monitoring purposes to a user supplied
 `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` implementation. Though the interface is
@@ -587,7 +587,7 @@ carefully:
    you generate in the listener is small compared to `maxBatchBytes` and
    `maxBatchLogEvents` to prevent feedback loops.
 
-### Capturing Appender
+## Capturing Appender
 
 The `CapturingAppender` is meant to be used along with the `com.github.mlangc.more.log4j2.captor.LogCaptor` API, which is modeled
 after the
@@ -751,7 +751,7 @@ public class LogCaptorDemoTest {
 }
 ```
 
-### Null Appender
+## Null Appender
 
 The `NullAppender` is the Log4j2 equivalent of `/dev/null`: It silently discards all logs sent to it.
 
