@@ -425,7 +425,9 @@ public class AsyncHttpAppender extends AbstractAppender {
             scheduledFlush.cancel(false);
         }
 
-        scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
+        if (getState().compareTo(State.STOPPING) < 0) {
+            scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
+        }
     }
 
     private boolean needsFlushAssumeLocked(byte[] eventBytes) {
