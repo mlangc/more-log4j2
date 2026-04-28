@@ -21,6 +21,7 @@ package com.github.mlangc.more.log4j2.filters;
 
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
+import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
@@ -35,7 +36,6 @@ import java.util.concurrent.TimeUnit;
 
 import static com.github.mlangc.more.log4j2.test.helpers.TestHelpers.logWithAllOverloads;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 @LoggerContextSource(value = "RoutingFilterTest.xml", reconfigure = ReconfigurationPolicy.AFTER_EACH)
 class RoutingFilterTest {
@@ -156,10 +156,10 @@ class RoutingFilterTest {
     }
 
     @Test
-    void onMatchOrMismatchShouldThrow() {
+    void onMatchOrMismatchShouldReturnNeutral() {
         RoutingFilter routingFilter = (RoutingFilter) loggerContext.getConfiguration().getFilter();
-        assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMatch);
-        assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(routingFilter::getOnMismatch);
+        assertThat(routingFilter.getOnMatch()).isEqualTo(Filter.Result.NEUTRAL);
+        assertThat(routingFilter.getOnMismatch()).isEqualTo(Filter.Result.NEUTRAL);
     }
 
     @Test
