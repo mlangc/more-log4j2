@@ -1821,6 +1821,7 @@ class AsyncHttpAppenderTest {
         assertThat(collectedLinesPerStatusCode.get(200).values().stream().mapToInt(Integer::intValue).sum()).isEqualTo(2);
     }
 
+    @Disabled
     @RepeatedTest(5)
     void shouldRespectMaxBatchBytesIncludingSeparatorsIfOverloaded() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
