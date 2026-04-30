@@ -83,17 +83,6 @@
             </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <properties>
-                        <configurationParameters>
-                            junit.jupiter.execution.timeout.threaddump.enabled = true
-                            junit.jupiter.execution.timeout.mode = disabled_on_debug
-                            junit.jupiter.execution.timeout.default = 2m
-                            junit.jupiter.execution.timeout.lifecycle.method.default = 30s
-                        </configurationParameters>
-                    </properties>
-                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
-                </configuration>
             </plugin>
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
