@@ -14,3 +14,4 @@ pom.xml.tag
 *.log
 *.bkp
 .DS_Store
+.local/
