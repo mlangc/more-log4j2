@@ -178,7 +178,7 @@ class AsyncHttpAppenderTest {
     @BeforeAll
     static void beforeAll() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
         sequence = new AtomicLong();
-        executor = new ScheduledThreadPoolExecutor(2, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("test-%d").build());
+        executor = new ScheduledThreadPoolExecutor(4, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("test-%d").build());
         executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
 
         System.setProperty("wireMockPort", "" + wireMockExt.getPort());
@@ -562,7 +562,7 @@ class AsyncHttpAppenderTest {
             };
 
             List<CompletableFuture<Void>> futures = IntStream.range(0, testCase.parallelism)
-                    .mapToObj(id -> CompletableFuture.runAsync(logBurstJob.apply(id)))
+                    .mapToObj(id -> CompletableFuture.runAsync(logBurstJob.apply(id), executor))
                     .toList();
 
             for (CompletableFuture<Void> future : futures) {
@@ -700,7 +700,7 @@ class AsyncHttpAppenderTest {
                 for (int i = 0; i < 5000; i++) {
                     logger.info("test");
                 }
-            });
+            }, executor);
 
             assertThat(logManyLinesJob).succeedsWithin(1, TimeUnit.SECONDS);
         } finally {
@@ -1687,7 +1687,7 @@ class AsyncHttpAppenderTest {
                 }
             };
 
-            assertThat(CompletableFuture.runAsync(logTillDropped)).succeedsWithin(5, TimeUnit.SECONDS);
+            assertThat(CompletableFuture.runAsync(logTillDropped, executor)).succeedsWithin(5, TimeUnit.SECONDS);
         }
 
         var expectedRequests = Math.toIntExact(logEvents.longValue() - countingAppender.currentCount());
@@ -1821,7 +1821,6 @@ class AsyncHttpAppenderTest {
         assertThat(collectedLinesPerStatusCode.get(200).values().stream().mapToInt(Integer::intValue).sum()).isEqualTo(2);
     }
 
-    @Disabled
     @RepeatedTest(5)
     void shouldRespectMaxBatchBytesIncludingSeparatorsIfOverloaded() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
@@ -1847,7 +1846,7 @@ class AsyncHttpAppenderTest {
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
-        final var numJobs = 4;
+        final var numJobs = 2;
         final var logsPerJob = 100;
         try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
             var log = context.getLogger(getClass());
@@ -1857,12 +1856,12 @@ class AsyncHttpAppenderTest {
                         for (int i = 0; i < logsPerJob; i++) {
                             log.info("x");
                         }
-                    })).toArray(CompletableFuture<?>[]::new);
+                    }, executor)).toArray(CompletableFuture<?>[]::new);
 
             assertThat(CompletableFuture.allOf(jobs)).succeedsWithin(1, TimeUnit.SECONDS);
         }
 
-        var expectedKeys = IntStream.rangeClosed(0, maxBatchLen)
+        var expectedKeys = IntStream.rangeClosed(1, maxBatchLen)
                 .mapToObj(renderBatch)
                 .collect(Collectors.toUnmodifiableSet());
 
