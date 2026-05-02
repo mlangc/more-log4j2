@@ -22,12 +22,14 @@ package com.github.mlangc.more.log4j2.captor;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -50,6 +52,13 @@ class LogCaptorTest {
 
     @AutoClose
     final LogCaptor logCaptor2 = LogCaptor.forClass(Service2.class);
+
+    @AfterEach
+    void afterEach() {
+        logCaptor0.resetLogLevel();
+        logCaptor1.resetLogLevel();
+        logCaptor2.resetLogLevel();
+    }
 
     @Test
     void shouldCaptureLogsFromDifferentThread() {
@@ -281,6 +290,23 @@ class LogCaptorTest {
     }
 
     @Test
+    void interleavedCaptorsForIdenticalLoggersShouldNotCorruptLogLevelOnReset() {
+        var log = nextUniqueLogger();
+        var initialLevel = log.getLevel();
+
+        try (var captor1 = LogCaptor.forName(log.getName()); var captor2 = LogCaptor.forName(log.getName())) {
+            captor1.setLogLevel(Level.WARN);
+            assertThat(log.getLevel()).isEqualTo(Level.WARN);
+            captor2.setLogLevel(Level.ERROR);
+            assertThat(log.getLevel()).isEqualTo(Level.ERROR);
+            captor1.resetLogLevel();
+            assertThat(log.getLevel()).isEqualTo(initialLevel);
+            captor2.resetLogLevel();
+            assertThat(log.getLevel()).isEqualTo(initialLevel);
+        }
+    }
+
+    @Test
     void shouldWorkForLogsFromMultipleThreads() {
         var logsPerService = 1000;
 
@@ -313,5 +339,11 @@ class LogCaptorTest {
                 .hasSize(2 * logsPerService)
                 .containsSubsequence(logCaptor1.getLogEvents())
                 .containsSubsequence(logCaptor2.getLogEvents());
+    }
+
+    static final AtomicLong loggerSequence = new AtomicLong();
+
+    static Logger nextUniqueLogger() {
+        return LogManager.getLogger(LogCaptorTest.class.getName() + ".uniq" + loggerSequence.getAndIncrement());
     }
 }

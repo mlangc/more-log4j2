@@ -29,24 +29,30 @@ import org.apache.logging.log4j.core.config.Configurator;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import static com.github.mlangc.more.log4j2.internal.util.LoggerNameUtil.isNameEqualOrAncestorOf;
 
 public class LogCaptor implements AutoCloseable {
+    private static final ConcurrentHashMap<String, Level> originalLevels = new ConcurrentHashMap<>();
+
     private final CapturingAppender capturingAppender;
     private final ArrayList<LogEvent> capturedEvents = new ArrayList<>();
 
     private final Logger logger;
     private final Logger altLogger;
-    private final Level originalLevel;
     private final CapturingAppender.LogEventConsumer logsConsumer;
 
     private LogCaptor(String loggerName, String altLoggerName) {
         this.logger = LogManager.getLogger(loggerName);
         this.altLogger = (altLoggerName != null && !loggerName.equals(altLoggerName)) ? LogManager.getLogger(altLoggerName) : null;
         this.capturingAppender = getCapturingAppender();
-        this.originalLevel = LogManager.getLogger(loggerName).getLevel();
+
+        originalLevels.computeIfAbsent(this.logger.getName(), ignore -> this.logger.getLevel());
+        if (this.altLogger != null) {
+            originalLevels.computeIfAbsent(this.altLogger.getName(), ignore -> this.altLogger.getLevel());
+        }
 
         this.logsConsumer = new CapturingAppender.LogEventConsumer() {
             @Override
@@ -55,11 +61,7 @@ public class LogCaptor implements AutoCloseable {
                     return true;
                 }
 
-                if (altLogger != null && isNameEqualOrAncestorOf(altLogger.getName(), event.getLoggerName())) {
-                    return true;
-                }
-
-                return false;
+                return altLogger != null && isNameEqualOrAncestorOf(altLogger.getName(), event.getLoggerName());
             }
 
             @Override
@@ -166,7 +168,6 @@ public class LogCaptor implements AutoCloseable {
     @Override
     public void close() {
         capturingAppender.unregisterConsumer(logsConsumer);
-        resetLogLevel();
         clearLogs();
     }
 
@@ -180,8 +181,10 @@ public class LogCaptor implements AutoCloseable {
 
     public void resetLogLevel() {
         doForLoggers(logger -> {
-            if (logger.getLevel() != originalLevel) {
-                Configurator.setLevel(logger, originalLevel);
+            var origLevel = originalLevels.get(logger.getName());
+
+            if (logger.getLevel() != origLevel) {
+                Configurator.setLevel(logger, origLevel);
             }
         });
     }
