@@ -171,6 +171,10 @@ public class ThrottlingFilter extends AbstractFilter {
             return onMatch;
         }
 
+        // Note: `t` is read once, before the CAS loop. Correctness-wise either position is defensible:
+        // reading inside the loop gives a `t` slightly closer to when the log event's own timestamp will
+        // be captured (which happens after this method returns), but reading outside better reflects when
+        // the call was issued. Performance clearly favors reading once.
         long t = nanoClock.nanoTime();
         while (true) {
             long t0 = startTicks.get();
