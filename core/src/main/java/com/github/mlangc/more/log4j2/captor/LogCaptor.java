@@ -29,6 +29,7 @@ import org.apache.logging.log4j.core.config.Configurator;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -137,7 +138,7 @@ public class LogCaptor implements AutoCloseable {
 
     public synchronized List<String> getLogs(Level level) {
         return capturedEvents.stream()
-                .filter(e -> e.getLevel() == level)
+                .filter(e -> Objects.equals(e.getLevel(), level))
                 .map(e -> e.getMessage().getFormattedMessage())
                 .toList();
     }

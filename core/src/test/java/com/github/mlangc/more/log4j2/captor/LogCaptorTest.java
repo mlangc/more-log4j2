@@ -416,6 +416,16 @@ class LogCaptorTest {
         assertThatNullPointerException().isThrownBy(() -> LogCaptor.forClass(null));
     }
 
+    @Test
+    void shouldWorkWithCustomLevel() {
+        var customLevel = Level.forName("CUSTOM", 401);
+        logCaptor0.setLogLevel(customLevel);
+        LOG.log(customLevel, "test");
+        assertThat(logCaptor0.getLogs(customLevel)).containsExactly("test");
+        logCaptor0.resetLogLevel();
+        assertThat(LOG.getLevel()).isEqualTo(Level.INFO);
+    }
+
     static final AtomicLong loggerSequence = new AtomicLong();
 
     static Logger nextUniqueLogger() {
