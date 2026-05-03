@@ -30,6 +30,7 @@ import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -307,6 +308,37 @@ class LogCaptorTest {
     }
 
     @Test
+    void concurrentlyOperatingCaptorsForSameLoggerShouldNotCorruptLogLevelOnReset() {
+        var log = nextUniqueLogger();
+        var initialLevel = log.getLevel();
+
+        Runnable changeResetAndCheckLogLevel = () -> {
+            try (var captor = LogCaptor.forName(log.getName())) {
+                for (int i = 0; i < 1000; i++) {
+                    captor.setLogLevelToTrace();
+                    log.trace("something to make");
+                    captor.setLogLevelToDebug();
+                    log.debug("sure that");
+                    captor.setLogLevelToInfo();
+                    log.info("log level changes");
+                    captor.setLogLevelToDebug();
+                    log.trace("cannot be optimized");
+                    captor.setLogLevelToTrace();
+                    log.debug("away by smart JITs");
+                    captor.resetLogLevel();
+                }
+            }
+        };
+
+        var jobs = IntStream.range(0, 4)
+                .mapToObj(ignore -> CompletableFuture.runAsync(changeResetAndCheckLogLevel))
+                .toArray(CompletableFuture<?>[]::new);
+
+        assertThat(CompletableFuture.allOf(jobs)).succeedsWithin(5, TimeUnit.SECONDS);
+        assertThat(log.getLevel()).isEqualTo(initialLevel);
+    }
+
+    @Test
     void shouldWorkForLogsFromMultipleThreads() {
         var logsPerService = 1000;
 
@@ -339,6 +371,23 @@ class LogCaptorTest {
                 .hasSize(2 * logsPerService)
                 .containsSubsequence(logCaptor1.getLogEvents())
                 .containsSubsequence(logCaptor2.getLogEvents());
+    }
+
+    @Test
+    void settingAndResettingLogLevelsForRootFromMultipleCaptorsShouldWork() {
+        try (var rootCaptor1 = LogCaptor.forRoot(); var rootCaptor2 = LogCaptor.forRoot()) {
+            var rootLogger = LogManager.getRootLogger();
+            var initialLevel = rootLogger.getLevel();
+
+            rootCaptor1.setLogLevelToTrace();
+            assertThat(rootLogger.getLevel()).isEqualTo(Level.TRACE);
+            rootCaptor2.setLogLevelToDebug();
+            assertThat(rootLogger.getLevel()).isEqualTo(Level.DEBUG);
+            rootCaptor2.resetLogLevel();
+            assertThat(rootLogger.getLevel()).isEqualTo(initialLevel);
+            rootCaptor1.resetLogLevel();
+            assertThat(rootLogger.getLevel()).isEqualTo(initialLevel);
+        }
     }
 
     static final AtomicLong loggerSequence = new AtomicLong();

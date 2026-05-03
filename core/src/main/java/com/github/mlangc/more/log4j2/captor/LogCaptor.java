@@ -49,11 +49,6 @@ public class LogCaptor implements AutoCloseable {
         this.altLogger = (altLoggerName != null && !loggerName.equals(altLoggerName)) ? LogManager.getLogger(altLoggerName) : null;
         this.capturingAppender = getCapturingAppender();
 
-        originalLevels.computeIfAbsent(this.logger.getName(), ignore -> this.logger.getLevel());
-        if (this.altLogger != null) {
-            originalLevels.computeIfAbsent(this.altLogger.getName(), ignore -> this.altLogger.getLevel());
-        }
-
         this.logsConsumer = new CapturingAppender.LogEventConsumer() {
             @Override
             public boolean isInterested(LogEvent event) {
@@ -150,7 +145,19 @@ public class LogCaptor implements AutoCloseable {
     }
 
     public void setLogLevel(Level level) {
-        doForLoggers(logger -> Configurator.setLevel(logger, level));
+        doForLoggers(logger -> {
+            originalLevels.compute(logger.getName(), (ignore, origLevel) -> {
+                if (origLevel == null) {
+                    origLevel = logger.getLevel();
+                }
+
+                if (!logger.getLevel().equals(level)) {
+                    Configurator.setLevel(logger, level);
+                }
+
+                return origLevel;
+            });
+        });
     }
 
     public void setLogLevelToInfo() {
@@ -176,16 +183,18 @@ public class LogCaptor implements AutoCloseable {
     }
 
     public void disableLogs() {
-        doForLoggers(logger -> Configurator.setLevel(logger, Level.OFF));
+        setLogLevel(Level.OFF);
     }
 
     public void resetLogLevel() {
         doForLoggers(logger -> {
-            var origLevel = originalLevels.get(logger.getName());
+            originalLevels.compute(logger.getName(), (name, origLevel) -> {
+                if (origLevel != null && !logger.getLevel().equals(origLevel)) {
+                    Configurator.setLevel(logger, origLevel);
+                }
 
-            if (logger.getLevel() != origLevel) {
-                Configurator.setLevel(logger, origLevel);
-            }
+                return null;
+            });
         });
     }
 
