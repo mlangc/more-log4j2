@@ -33,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import static com.github.mlangc.more.log4j2.internal.util.LoggerNameUtil.isNameEqualOrAncestorOf;
+import static java.util.Objects.requireNonNull;
 
 public class LogCaptor implements AutoCloseable {
     private static final ConcurrentHashMap<String, Level> originalLevels = new ConcurrentHashMap<>();
@@ -45,6 +46,8 @@ public class LogCaptor implements AutoCloseable {
     private final CapturingAppender.LogEventConsumer logsConsumer;
 
     private LogCaptor(String loggerName, String altLoggerName) {
+        requireNonNull(loggerName, "loggerName must not be null");
+
         this.logger = LogManager.getLogger(loggerName);
         this.altLogger = (altLoggerName != null && !loggerName.equals(altLoggerName)) ? LogManager.getLogger(altLoggerName) : null;
         this.capturingAppender = getCapturingAppender();
@@ -92,6 +95,11 @@ public class LogCaptor implements AutoCloseable {
     }
 
     private static LogCaptor forName(String loggerName, String altLoggerName) {
+        if (loggerName == null && altLoggerName != null) {
+            loggerName = altLoggerName;
+            altLoggerName = null;
+        }
+
         var captor = new LogCaptor(loggerName, altLoggerName);
         captor.capturingAppender.registerConsumer(captor.logsConsumer);
         return captor;

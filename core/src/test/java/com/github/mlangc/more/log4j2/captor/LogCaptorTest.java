@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 class LogCaptorTest {
     private static final Logger LOG = LogManager.getLogger(LogCaptorTest.class);
@@ -388,6 +389,31 @@ class LogCaptorTest {
             rootCaptor1.resetLogLevel();
             assertThat(rootLogger.getLevel()).isEqualTo(initialLevel);
         }
+    }
+
+    @Test
+    void shouldCaptureLogsFromAnonClasses() {
+        var test = new Object() {
+            void run() {
+                var log = LogManager.getLogger(getClass());
+
+                try (var captor = LogCaptor.forClass(getClass())) {
+                    log.info("test");
+                    assertThat(captor.getInfoLogs()).containsExactly("test");
+                }
+            }
+        };
+
+        test.run();
+    }
+
+    @Test
+    void shouldRejectNullAsLoggerName() {
+        //noinspection resource
+        assertThatNullPointerException().isThrownBy(() -> LogCaptor.forName(null));
+
+        //noinspection resource,DataFlowIssue
+        assertThatNullPointerException().isThrownBy(() -> LogCaptor.forClass(null));
     }
 
     static final AtomicLong loggerSequence = new AtomicLong();
