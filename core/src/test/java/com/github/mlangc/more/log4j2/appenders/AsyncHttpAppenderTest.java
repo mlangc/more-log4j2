@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -1436,15 +1436,16 @@ class AsyncHttpAppenderTest {
             }
         }
 
-        assertThat(completionListener.getLastBatchCompletionEvents())
-                .hasSize(numLogLines)
-                .allSatisfy(evt -> {
-                    assertThat(evt.source().maxBatchBufferBatches())
-                            .isEqualTo(maxBatchBufferBatches);
+        Awaitility.await().atMost(1, TimeUnit.SECONDS).untilAsserted(() ->
+                assertThat(completionListener.getLastBatchCompletionEvents())
+                        .hasSize(numLogLines)
+                        .allSatisfy(evt -> {
+                            assertThat(evt.source().maxBatchBufferBatches())
+                                    .isEqualTo(maxBatchBufferBatches);
 
-                    assertThat(evt.stats().bufferedBatches())
-                            .isLessThanOrEqualTo(maxBatchBufferBatches);
-                });
+                            assertThat(evt.stats().bufferedBatches())
+                                    .isLessThanOrEqualTo(maxBatchBufferBatches);
+                        }));
     }
 
     @Test
@@ -2033,6 +2034,7 @@ class AsyncHttpAppenderTest {
 
     static class NanoTimeRecordingTestBatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
         record CompletionEventWithNanoTime(AsyncHttpAppender.BatchCompletionEvent event, long nanoTime) { }
+
         final ConcurrentLinkedDeque<CompletionEventWithNanoTime> completionEvents = new ConcurrentLinkedDeque<>();
 
         @Override
