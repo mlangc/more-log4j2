@@ -36,7 +36,7 @@ jobs:
     - name: Build with Maven
       run: |
         if [ -n "${{ inputs.test }}" ]; then
-          mvn -B -Dtest="${{ inputs.test }}" test --file pom.xml
+          mvn -B -Dtest="${{ inputs.test }}" -Dsurefire.failIfNoSpecifiedTests=false test --file pom.xml
         else
           mvn -B package --file pom.xml
         fi
