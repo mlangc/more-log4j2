@@ -22,6 +22,7 @@ package com.github.mlangc.more.log4j2.captor;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.LoggerContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
@@ -32,8 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.*;
 
 class LogCaptorTest {
     private static final Logger LOG = LogManager.getLogger(LogCaptorTest.class);
@@ -424,6 +424,79 @@ class LogCaptorTest {
         assertThat(logCaptor0.getLogs(customLevel)).containsExactly("test");
         logCaptor0.resetLogLevel();
         assertThat(LOG.getLevel()).isEqualTo(Level.INFO);
+    }
+
+    @Test
+    void shouldRestorePreviousStateOnResetIfLogLevelIsInherited() {
+        var log = LogManager.getLogger("configured.via.root.logger");
+        try (var rootCaptor = LogCaptor.forRoot(); var captor = LogCaptor.forName(log.getName())) {
+            captor.setLogLevel(Level.WARN);
+            captor.resetLogLevel();
+
+            rootCaptor.setLogLevel(Level.DEBUG);
+            try {
+                log.debug("should pick up debug level from root");
+                assertThat(captor.getDebugLogs()).hasSize(1);
+            } finally {
+                rootCaptor.resetLogLevel();
+            }
+        }
+    }
+
+    @Test
+    void shouldRestorePreviousStateIfLoggerIsConfiguredWithoutLogLevel() {
+        var log = LogManager.getLogger("some.package.no.level");
+        var initialLevel = log.getLevel();
+        var context = LoggerContext.getContext(false);
+        try (var captor = LogCaptor.forName(log.getName())) {
+            captor.setLogLevel(Level.ERROR);
+            assertThat(log.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(context.getConfiguration().getLoggerConfig(log.getName()).getExplicitLevel()).isEqualTo(Level.ERROR);
+            captor.resetLogLevel();
+            assertThat(log.getLevel()).isEqualTo(initialLevel);
+            assertThat(context.getConfiguration().getLoggerConfig(log.getName()).getExplicitLevel()).isNull();
+        }
+    }
+
+    @Test
+    void shouldRestorePreviousStateIfLoggerIsConfiguredWithWarnLevel() {
+        var log = LogManager.getLogger("some.package.warn.level");
+        var initialLevel = log.getLevel();
+        var context = LoggerContext.getContext(false);
+        try (var captor = LogCaptor.forName(log.getName())) {
+            captor.setLogLevel(Level.ERROR);
+            assertThat(log.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(context.getConfiguration().getLoggerConfig(log.getName()).getExplicitLevel()).isEqualTo(Level.ERROR);
+            captor.resetLogLevel();
+            assertThat(log.getLevel()).isEqualTo(initialLevel);
+            assertThat(context.getConfiguration().getLoggerConfig(log.getName()).getExplicitLevel()).isEqualTo(initialLevel);
+        }
+    }
+
+    @Test
+    void settingAndResettingParentLogLevelShouldAffectChildren() {
+        var parentLogger = LogManager.getLogger("parent");
+        var childLogger = LogManager.getLogger("parent.child");
+
+        try (var parentCaptor = LogCaptor.forName(parentLogger.getName()); var childCaptor = LogCaptor.forName(childLogger.getName())) {
+            parentCaptor.setLogLevel(Level.ERROR);
+            childLogger.info("filtered");
+            assertThat(childCaptor.getLogs()).isEmpty();
+            assertThat(childLogger.getLevel()).isEqualTo(Level.ERROR);
+
+            parentCaptor.resetLogLevel();
+            childLogger.info("not filtered");
+            assertThat(childCaptor.getLogs()).hasSize(1);
+            assertThat(childLogger.getLevel()).isEqualTo(Level.INFO);
+        }
+    }
+
+    @Test
+    void doubleCloseShouldNotThrow() {
+        assertThatNoException().isThrownBy(() -> {
+            logCaptor0.close();
+            logCaptor0.close();
+        });
     }
 
     static final AtomicLong loggerSequence = new AtomicLong();

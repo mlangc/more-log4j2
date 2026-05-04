@@ -37,7 +37,14 @@ import static com.github.mlangc.more.log4j2.internal.util.LoggerNameUtil.isNameE
 import static java.util.Objects.requireNonNull;
 
 public class LogCaptor implements AutoCloseable {
-    private static final ConcurrentHashMap<String, Level> originalLevels = new ConcurrentHashMap<>();
+    private sealed interface OrigLevel {
+        record NotConfigured() implements OrigLevel { }
+        record Configured(Level value) implements OrigLevel { }
+
+        NotConfigured NOT_CONFIGURED = new NotConfigured();
+    }
+
+    private static final ConcurrentHashMap<String, OrigLevel> originalLevels = new ConcurrentHashMap<>();
 
     private final CapturingAppender capturingAppender;
     private final ArrayList<LogEvent> capturedEvents = new ArrayList<>();
@@ -157,7 +164,12 @@ public class LogCaptor implements AutoCloseable {
         doForLoggers(logger -> {
             originalLevels.compute(logger.getName(), (ignore, origLevel) -> {
                 if (origLevel == null) {
-                    origLevel = logger.getLevel();
+                    var loggerConfig = LoggerContext.getContext(false).getConfiguration().getLoggerConfig(logger.getName());
+                    if (loggerConfig.getName().equals(logger.getName())) {
+                        origLevel = new OrigLevel.Configured(loggerConfig.getExplicitLevel());
+                    } else {
+                        origLevel = OrigLevel.NOT_CONFIGURED;
+                    }
                 }
 
                 if (!logger.getLevel().equals(level)) {
@@ -198,8 +210,12 @@ public class LogCaptor implements AutoCloseable {
     public void resetLogLevel() {
         doForLoggers(logger -> {
             originalLevels.compute(logger.getName(), (name, origLevel) -> {
-                if (origLevel != null && !logger.getLevel().equals(origLevel)) {
-                    Configurator.setLevel(logger, origLevel);
+                if (origLevel instanceof OrigLevel.NotConfigured) {
+                    var context = LoggerContext.getContext(false);
+                    context.getConfiguration().removeLogger(name);
+                    context.updateLoggers();
+                } else if (origLevel instanceof OrigLevel.Configured configured) {
+                    Configurator.setLevel(logger, configured.value);
                 }
 
                 return null;

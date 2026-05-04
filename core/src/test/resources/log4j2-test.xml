@@ -29,5 +29,8 @@
             <AppenderRef ref="Console" />
             <AppenderRef ref="Captor"/>
         </Root>
+
+        <Logger name="some.package.no.level"/>
+        <Logger name="some.package.warn.level" level="warn"/>
     </Loggers>
 </Configuration>
