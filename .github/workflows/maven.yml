@@ -20,6 +20,11 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
 jobs:
   build:
 
@@ -40,3 +45,10 @@ jobs:
         else
           mvn -B package --file pom.xml
         fi
+    - name: Test Report
+      uses: dorny/test-reporter@v3
+      if: ${{ !cancelled() }}
+      with:
+        name: JUnit Tests
+        path: '**/target/surefire-reports/TEST-*.xml'
+        reporter: java-junit
