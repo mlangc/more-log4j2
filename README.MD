@@ -2,6 +2,7 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.github.mlangc/more-log4j2.svg?label=Maven%20Central)](https://search.maven.org/artifact/com.github.mlangc/more-log4j2)
 [![Java 17 or higher](https://img.shields.io/badge/Java-17%2B-007396)](https://docs.oracle.com/javase/17/)
+[![CI](https://github.com/mlangc/more-log4j2/actions/workflows/maven.yml/badge.svg)](https://github.com/mlangc/more-log4j2/actions/workflows/maven.yml)
 
 A collection of plugins for log4j2.
 
