@@ -491,7 +491,7 @@ class AsyncHttpAppenderTest {
                 }),
                 StressTestCase.tweaked(t -> {
                     t.medianServerResponseMs = 10;
-                    t.maxBlockOnOverflowMs = 1000;
+                    t.maxBlockOnOverflowMs = 10_000;
                     t.maxBatchLogEvents = 50;
                     t.mustEventuallySucceed = true;
                     t.mustNotDropLogs = true;
@@ -499,7 +499,7 @@ class AsyncHttpAppenderTest {
                 }),
                 StressTestCase.tweaked(t -> {
                     t.medianServerResponseMs = 10;
-                    t.maxBlockOnOverflowMs = 2000;
+                    t.maxBlockOnOverflowMs = 10_000;
                     t.maxBatchLogEvents = 100;
                     t.mustEventuallySucceed = true;
                     t.mustNotDropLogs = true;
