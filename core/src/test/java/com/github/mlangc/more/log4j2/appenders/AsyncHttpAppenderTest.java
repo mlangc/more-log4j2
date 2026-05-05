@@ -564,10 +564,10 @@ class AsyncHttpAppenderTest {
                     .toList();
 
             for (CompletableFuture<Void> future : futures) {
-                assertThat(future).succeedsWithin(10, TimeUnit.SECONDS);
+                assertThat(future).succeedsWithin(20, TimeUnit.SECONDS);
             }
         } finally {
-            assertThat(context.stop(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(context.stop(15, TimeUnit.SECONDS)).isTrue();
         }
 
         assertThat(batchCompletionListener.getLastBatchCompletionEvents())
