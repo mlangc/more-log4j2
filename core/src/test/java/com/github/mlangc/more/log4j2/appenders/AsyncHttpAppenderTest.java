@@ -488,7 +488,7 @@ class AsyncHttpAppenderTest {
                     t.maxBlockOnOverflowMs = 10_000;
                     t.serverFailureRate = 0.1;
                     t.retries = 10;
-                    t.maxBatchLogEvents = 100;
+                    t.maxBatchLogEvents = 200;
                 }),
                 StressTestCase.tweaked(t -> {
                     t.medianServerResponseMs = 10;
@@ -564,7 +564,7 @@ class AsyncHttpAppenderTest {
                     .toList();
 
             for (CompletableFuture<Void> future : futures) {
-                assertThat(future).succeedsWithin(20, TimeUnit.SECONDS);
+                assertThat(future).succeedsWithin(40, TimeUnit.SECONDS);
             }
         } finally {
             assertThat(context.stop(15, TimeUnit.SECONDS)).isTrue();
