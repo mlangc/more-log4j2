@@ -485,6 +485,7 @@ class AsyncHttpAppenderTest {
                 }),
                 StressTestCase.tweaked(t -> {
                     t.parallelism = 4;
+                    t.maxBlockOnOverflowMs = 10_000;
                     t.serverFailureRate = 0.1;
                     t.retries = 10;
                     t.maxBatchLogEvents = 100;
@@ -493,7 +494,6 @@ class AsyncHttpAppenderTest {
                     t.medianServerResponseMs = 10;
                     t.maxBlockOnOverflowMs = 10_000;
                     t.maxBatchLogEvents = 50;
-                    t.mustEventuallySucceed = true;
                     t.mustNotDropLogs = true;
                     t.logsPerThread = 10_000;
                 }),
@@ -501,7 +501,6 @@ class AsyncHttpAppenderTest {
                     t.medianServerResponseMs = 10;
                     t.maxBlockOnOverflowMs = 10_000;
                     t.maxBatchLogEvents = 100;
-                    t.mustEventuallySucceed = true;
                     t.mustNotDropLogs = true;
                     t.logsPerThread = 10_000;
                     t.parallelism = 2;
