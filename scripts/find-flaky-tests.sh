@@ -113,14 +113,19 @@ parse_surefire_xml() {
     done
 }
 
-# Parses all surefire XML reports under REPO_ROOT for the given iteration.
+# Parses surefire XML reports under REPO_ROOT written after the sentinel file (if given).
+# A sentinel file is used instead of a captured `date` timestamp because `find -newer <file>`
+# is the only portable time-filter option: BSD find (macOS) lacks GNU's -newermt flag, and
+# `stat` mtime format also differs between platforms.
 parse_all_reports() {
-    local iter="$1"
+    local iter="$1" sentinel="${2:-}"
     local found=0
+    local -a find_cmd=(find "$REPO_ROOT" -path '*/target/surefire-reports/TEST-*.xml')
+    [[ -n "$sentinel" ]] && find_cmd+=(-newer "$sentinel")
     while IFS= read -r -d '' xml_file; do
         parse_surefire_xml "$xml_file" "$iter"
         found=1
-    done < <(find "$REPO_ROOT" -path '*/target/surefire-reports/TEST-*.xml' -print0 2>/dev/null)
+    done < <("${find_cmd[@]}" -print0 2>/dev/null)
 
     if [[ $found -eq 0 ]]; then
         printf 'Warning: no surefire XML reports found under %s\n' "$REPO_ROOT" >&2
@@ -258,20 +263,26 @@ main() {
     local iterations_done
     iterations_done=$(awk -F'\t' '!/^#/ && NF==3 && $1+0>max {max=$1+0} END {print max+0}' "$OUTPUT_FILE")
 
+    local _iter_sentinel
+    _iter_sentinel=$(mktemp)
+
     on_interrupt() {
         printf '\nInterrupted after %d iteration(s).\n' "$iterations_done"
+        rm -f "$_iter_sentinel"
         print_summary "$OUTPUT_FILE"
         exit 0
     }
     trap on_interrupt INT
+    trap 'rm -f "$_iter_sentinel"' EXIT
 
     while true; do
         (( ++iterations_done ))
 
+        touch "$_iter_sentinel"
         local mvn_exit=0
         eval "$MAVEN_CMD" || mvn_exit=$?
 
-        parse_all_reports "$iterations_done" >> "$OUTPUT_FILE"
+        parse_all_reports "$iterations_done" "$_iter_sentinel" >> "$OUTPUT_FILE"
         print_progress "$iterations_done" "$mvn_exit" "$OUTPUT_FILE"
 
         if [[ -n "$ITERATIONS" && "$iterations_done" -ge "$ITERATIONS" ]]; then
