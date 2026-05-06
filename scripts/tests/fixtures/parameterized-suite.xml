@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.ParamTest" tests="2" errors="0" failures="1" skipped="0" time="0.1">
+  <testcase name="testMethod(int)[1]" classname="com.example.ParamTest" time="0.05"/>
+  <testcase name="testMethod(int)[2]" classname="com.example.ParamTest" time="0.05">
+    <failure message="expected 42 but was 0">java.lang.AssertionError</failure>
+  </testcase>
+</testsuite>

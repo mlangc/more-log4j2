@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.MixedTest" tests="4" errors="1" failures="1" skipped="1" time="0.2">
+  <testcase name="testPassing"  classname="com.example.MixedTest" time="0.05"/>
+  <testcase name="testFailing"  classname="com.example.MixedTest" time="0.05">
+    <failure message="expected true but was false">java.lang.AssertionError: expected true</failure>
+  </testcase>
+  <testcase name="testErroring" classname="com.example.MixedTest" time="0.05">
+    <error message="NullPointerException">java.lang.NullPointerException</error>
+  </testcase>
+  <testcase name="testSkipped"  classname="com.example.MixedTest" time="0.0">
+    <skipped/>
+  </testcase>
+</testsuite>

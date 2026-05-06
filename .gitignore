@@ -15,3 +15,4 @@ pom.xml.tag
 *.bkp
 .DS_Store
 local/
+*.tsv
