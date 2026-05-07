@@ -66,7 +66,6 @@ init_results_file() {
     local file="$1"
     if [[ ! -f "$file" ]]; then
         printf '# started=%s\n' "$(date -u +%FT%TZ)" > "$file"
-        printf '# command=%s\n' "$MAVEN_CMD" >> "$file"
         printf '# columns: iter\ttest_key\tstatus\n' >> "$file"
     fi
 }
@@ -113,6 +112,32 @@ parse_surefire_xml() {
     done
 }
 
+copy_failure_reports() {
+    local iter="$1" sentinel="${2:-}"
+    local run_name; run_name="$(basename "${OUTPUT_FILE%.tsv}")"
+    local failures_base="$REPO_ROOT/target/find-flaky-tests/failures/$run_name"
+    local copied=0
+
+    local -a find_cmd=(find "$REPO_ROOT" -path '*/target/surefire-reports/TEST-*.xml')
+    [[ -n "$sentinel" ]] && find_cmd+=(-newer "$sentinel")
+
+    while IFS= read -r -d '' xml_file; do
+        if grep -qE '<(failure|error)' "$xml_file"; then
+            local xml_base; xml_base="$(basename "$xml_file" .xml)"
+            local xml_rel_dir; xml_rel_dir="$(dirname "${xml_file#$REPO_ROOT/}")"
+            local dest_name="${xml_base}-iter-$(printf '%03d' "$iter").xml"
+            local dest="$failures_base/$xml_rel_dir/$dest_name"
+            mkdir -p "$(dirname "$dest")"
+            cp "$xml_file" "$dest"
+            (( ++copied ))
+        fi
+    done < <("${find_cmd[@]}" -print0 2>/dev/null)
+
+    if [[ $copied -gt 0 ]]; then
+        printf 'Failure reports (%d) saved to: %s\n' "$copied" "$failures_base"
+    fi
+}
+
 # Parses surefire XML reports under REPO_ROOT written after the sentinel file (if given).
 # A sentinel file is used instead of a captured `date` timestamp because `find -newer <file>`
 # is the only portable time-filter option: BSD find (macOS) lacks GNU's -newermt flag, and
@@ -134,13 +159,14 @@ parse_all_reports() {
 
 print_summary() {
     local file="$1"
+    local from_iter="${2:-0}"
 
     if [[ ! -f "$file" ]]; then
         printf 'Error: results file not found: %s\n' "$file" >&2
         exit 1
     fi
 
-    awk -F'\t' '
+    awk -F'\t' -v from_iter="$from_iter" '
     /^#/ {
         if ($0 ~ /^# started=/) started = substr($0, 11)
         next
@@ -151,6 +177,7 @@ print_summary() {
     }
     {
         iter = $1 + 0; key = $2; status = $3
+        if (from_iter > 0 && iter <= from_iter) next
         if (iter > max_iter) max_iter = iter
         if      (status == "pass")  pass[key]++
         else if (status == "fail")  fail[key]++
@@ -159,9 +186,14 @@ print_summary() {
         seen[key] = 1
     }
     END {
-        printf "\n=== Flaky Test Detection Summary ===\n"
+        title = (from_iter > 0) ? "=== Flaky Test Detection Summary (This Run) ===" \
+                                 : "=== Flaky Test Detection Summary ==="
+        printf "\n%s\n", title
         printf "Results file : %s\n", FILENAME
-        printf "Iterations   : %d\n\n", max_iter
+        if (from_iter > 0)
+            printf "Iterations   : %d (iter %d to %d)\n\n", max_iter - from_iter, from_iter + 1, max_iter
+        else
+            printf "Iterations   : %d\n\n", max_iter
 
         n_flaky = 0; n_always_fail = 0; n_ok = 0
         for (key in seen) {
@@ -205,6 +237,121 @@ print_summary() {
         }
 
         printf "\nALWAYS PASSING / SKIPPED : %d tests\n", n_ok
+    }
+    ' "$file"
+}
+
+print_delta() {
+    local file="$1"
+    local from_iter="$2"
+
+    awk -F'\t' -v from_iter="$from_iter" '
+    /^#/ { next }
+    NF != 3 { next }
+    {
+        iter = $1 + 0; key = $2; status = $3
+        seen[key] = 1
+        if      (status == "pass")  total_pass[key]++
+        else if (status == "fail")  total_fail[key]++
+        else if (status == "error") total_err[key]++
+        if (iter > from_iter) {
+            if      (status == "pass")  new_pass[key]++
+            else if (status == "fail")  new_fail[key]++
+            else if (status == "error") new_err[key]++
+        }
+    }
+    END {
+        printf "\n=== Delta Summary (Effect of This Run) ===\n\n"
+
+        n_newly_affected = 0; n_partly_resolved = 0; n_rate_changed = 0; n_unchanged = 0
+
+        for (key in seen) {
+            ap = total_pass[key]+0; af = total_fail[key]+0; ae = total_err[key]+0
+            np = new_pass[key]+0;   nf = new_fail[key]+0;   ne = new_err[key]+0
+            bp = ap - np;           bf = af - nf;            be = ae - ne
+
+            after_total  = ap + af + ae
+            before_total = bp + bf + be
+
+            if      (before_total == 0)  before_cat = -1
+            else if ((bf + be) == 0)     before_cat = 0
+            else if (bp > 0)             before_cat = 1
+            else                         before_cat = 2
+
+            if      (after_total == 0)   after_cat = 0
+            else if ((af + ae) == 0)     after_cat = 0
+            else if (ap > 0)             after_cat = 1
+            else                         after_cat = 2
+
+            before_fail_rate = (before_total > 0) ? int((bf + be) * 100 / before_total) : 0
+            after_fail_rate  = (after_total  > 0) ? int((af + ae) * 100 / after_total)  : 0
+
+            if ((before_cat == 0 || before_cat == -1) && (after_cat == 1 || after_cat == 2)) {
+                newly_affected_cat[key]  = before_cat
+                newly_affected[n_newly_affected++] = key
+            } else if (before_cat == 2 && after_cat == 1) {
+                partly_resolved[n_partly_resolved++] = key
+            } else if (before_cat == 1 && after_cat == 1) {
+                diff = after_fail_rate - before_fail_rate
+                if (diff < 0) diff = -diff
+                if (diff >= 5) {
+                    rate_before[key] = before_fail_rate
+                    rate_after[key]  = after_fail_rate
+                    rate_changed[n_rate_changed++] = key
+                } else {
+                    n_unchanged++
+                }
+            } else {
+                n_unchanged++
+            }
+        }
+
+        if (n_newly_affected > 0) {
+            print "NEWLY AFFECTED (no prior failures → failures now detected)"
+            for (i = 0; i < n_newly_affected; i++) {
+                key = newly_affected[i]
+                ap = total_pass[key]+0; af = total_fail[key]+0; ae = total_err[key]+0
+                after_total = ap + af + ae
+                after_fail_rate = int((af + ae) * 100 / after_total)
+                if (newly_affected_cat[key] == -1)
+                    printf "  %-72s  before: —            after: %d%% fail  (fail=%d / total=%d)\n", \
+                        key, after_fail_rate, af + ae, after_total
+                else
+                    printf "  %-72s  before: always-pass  after: %d%% fail  (fail=%d / total=%d)\n", \
+                        key, after_fail_rate, af + ae, after_total
+            }
+            printf "\n"
+        }
+
+        if (n_partly_resolved > 0) {
+            print "PARTLY RESOLVED (always-fail → flaky)"
+            for (i = 0; i < n_partly_resolved; i++) {
+                key = partly_resolved[i]
+                ap = total_pass[key]+0; af = total_fail[key]+0; ae = total_err[key]+0
+                after_total = ap + af + ae
+                after_fail_rate = int((af + ae) * 100 / after_total)
+                printf "  %-72s  before: always-fail  after: %d%% fail  (pass=%d / total=%d)\n", \
+                    key, after_fail_rate, ap, after_total
+            }
+            printf "\n"
+        }
+
+        if (n_rate_changed > 0) {
+            print "RATE CHANGED (flaky before, flaky after; failure rate shifted ≥ 5 pp)"
+            for (i = 0; i < n_rate_changed; i++) {
+                key = rate_changed[i]
+                ap = total_pass[key]+0; af = total_fail[key]+0; ae = total_err[key]+0
+                np = new_pass[key]+0;   nf = new_fail[key]+0;   ne = new_err[key]+0
+                bf = (af - nf); be = (ae - ne)
+                before_total = (ap - np) + bf + be
+                after_total  = ap + af + ae
+                printf "  %-72s  fail rate: %d%% → %d%%  (before: fail=%d/%d  after: fail=%d/%d)\n", \
+                    key, rate_before[key], rate_after[key], bf + be, before_total, af + ae, after_total
+            }
+            printf "\n"
+        }
+
+        printf "NO SIGNIFICANT CHANGE : %d tests\n", n_unchanged
     }
     ' "$file"
 }
@@ -262,6 +409,7 @@ main() {
 
     local iterations_done
     iterations_done=$(awk -F'\t' '!/^#/ && NF==3 && $1+0>max {max=$1+0} END {print max+0}' "$OUTPUT_FILE")
+    local start_iter="$iterations_done"
 
     local _iter_sentinel
     _iter_sentinel=$(mktemp)
@@ -269,6 +417,10 @@ main() {
     on_interrupt() {
         printf '\nInterrupted after %d iteration(s).\n' "$iterations_done"
         rm -f "$_iter_sentinel"
+        if [[ "$start_iter" -gt 0 ]]; then
+            print_summary "$OUTPUT_FILE" "$start_iter"
+            print_delta   "$OUTPUT_FILE" "$start_iter"
+        fi
         print_summary "$OUTPUT_FILE"
         exit 0
     }
@@ -283,6 +435,7 @@ main() {
         eval "$MAVEN_CMD" || mvn_exit=$?
 
         parse_all_reports "$iterations_done" "$_iter_sentinel" >> "$OUTPUT_FILE"
+        copy_failure_reports "$iterations_done" "$_iter_sentinel"
         print_progress "$iterations_done" "$mvn_exit" "$OUTPUT_FILE"
 
         if [[ -n "$ITERATIONS" && "$iterations_done" -ge "$ITERATIONS" ]]; then
@@ -290,6 +443,10 @@ main() {
         fi
     done
 
+    if [[ "$start_iter" -gt 0 ]]; then
+        print_summary "$OUTPUT_FILE" "$start_iter"
+        print_delta   "$OUTPUT_FILE" "$start_iter"
+    fi
     print_summary "$OUTPUT_FILE"
 }
 

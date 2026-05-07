@@ -58,7 +58,6 @@ make_tsv() {
     local file="$1"
     printf '# started=2026-01-01T00:00:00Z\n' > "$file"
     printf '# iterations_planned=3\n' >> "$file"
-    printf '# command=./mvnw test\n' >> "$file"
     printf '# columns: iter\ttest_key\tstatus\n' >> "$file"
 }
 
@@ -113,6 +112,96 @@ make_tsv() {
     [[ "$output" == *"not found"* ]]
 }
 
+@test "print_summary with from_iter only includes later iterations and shows This Run label" {
+    local tsv="$TEST_TMPDIR/multi-iter.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+    printf '1\tcom.example.FooTest#testB\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testB\tpass\n' >> "$tsv"
+
+    run print_summary "$tsv" 1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"(This Run)"* ]]
+    [[ "$output" == *"iter 2 to 2"* ]]
+    [[ "$output" == *"ALWAYS PASSING / SKIPPED : 2 tests"* ]]
+}
+
+# ---- print_delta ----
+
+@test "print_delta: always-pass test that gains failures appears under NEWLY AFFECTED" {
+    local tsv="$TEST_TMPDIR/delta.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+    printf '4\tcom.example.FooTest#testA\tfail\n' >> "$tsv"
+
+    run print_delta "$tsv" 3
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NEWLY AFFECTED"* ]]
+    [[ "$output" == *"com.example.FooTest#testA"* ]]
+    [[ "$output" == *"before: always-pass"* ]]
+}
+
+@test "print_delta: always-fail test that starts passing appears under PARTLY RESOLVED" {
+    local tsv="$TEST_TMPDIR/delta2.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testB\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testB\tfail\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testB\tpass\n' >> "$tsv"
+
+    run print_delta "$tsv" 2
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PARTLY RESOLVED"* ]]
+    [[ "$output" == *"com.example.FooTest#testB"* ]]
+}
+
+# ---- copy_failure_reports ----
+
+@test "copy_failure_reports copies failing XML with iter suffix, skips passing XML" {
+    local repo; repo=$(mktemp -d)
+    local reports_dir="$repo/core/target/surefire-reports"
+    mkdir -p "$reports_dir"
+
+    local sentinel; sentinel=$(mktemp)
+    sleep 0.01  # ensure XML mtime is strictly newer than sentinel
+
+    printf '<testsuite><testcase classname="A" name="b"><failure>boom</failure></testcase></testsuite>\n' \
+        > "$reports_dir/TEST-A.xml"
+    printf '<testsuite><testcase classname="A" name="c"/></testsuite>\n' \
+        > "$reports_dir/TEST-Clean.xml"
+
+    REPO_ROOT="$repo" OUTPUT_FILE="my-run.tsv" copy_failure_reports 5 "$sentinel"
+
+    local base="$repo/target/find-flaky-tests/failures/my-run"
+    local rel="core/target/surefire-reports"
+    [ -f "$base/$rel/TEST-A-iter-005.xml" ]
+    [ ! -f "$base/$rel/TEST-Clean-iter-005.xml" ]
+
+    rm -rf "$repo" "$sentinel"
+}
+
+@test "copy_failure_reports produces no output and no directory when no failures" {
+    local repo; repo=$(mktemp -d)
+    local reports_dir="$repo/core/target/surefire-reports"
+    mkdir -p "$reports_dir"
+
+    local sentinel; sentinel=$(mktemp)
+    sleep 0.01
+
+    printf '<testsuite><testcase classname="A" name="c"/></testsuite>\n' \
+        > "$reports_dir/TEST-Clean.xml"
+
+    run env REPO_ROOT="$repo" OUTPUT_FILE="my-run.tsv" bash -c \
+        'source "'"$BATS_TEST_DIRNAME/../find-flaky-tests.sh"'"; copy_failure_reports 1 "'"$sentinel"'"'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -d "$repo/target/find-flaky-tests" ]
+
+    rm -rf "$repo" "$sentinel"
+}
+
 # ---- init_results_file ----
 
 @test "init_results_file: creates header when file does not exist" {
@@ -121,7 +210,6 @@ make_tsv() {
     init_results_file "$tsv"
     [ -f "$tsv" ]
     grep -q '^# started=' "$tsv"
-    grep -q '^# command=' "$tsv"
 }
 
 @test "init_results_file: does not overwrite an existing file" {
