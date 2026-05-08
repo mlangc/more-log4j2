@@ -43,8 +43,8 @@ class HttpRetryManager {
 
         this.maxBackoffNanos = TimeUnit.MILLISECONDS.toNanos(config.maxBackoffMs);
 
-        var statBackoffNanosDivisor = (1L << Math.min(63, Math.max(0, config.maxRetries - 1)));
-        this.startMaxBackoffNanos = Math.max(TimeUnit.MILLISECONDS.toNanos(1), (maxBackoffNanos + statBackoffNanosDivisor - 1) / statBackoffNanosDivisor);
+        var startBackoffNanosDivisor = (1L << Math.min(63, Math.max(0, config.maxRetries - 1)));
+        this.startMaxBackoffNanos = Math.max(TimeUnit.MILLISECONDS.toNanos(1), (maxBackoffNanos + startBackoffNanosDivisor - 1) / startBackoffNanosDivisor);
     }
 
     record Config(int maxRetries, int maxBackoffMs, IntPredicate statusCodeSuccessPredicate, Predicate<Exception> exceptionRetryPredicate,
