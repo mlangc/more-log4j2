@@ -112,6 +112,110 @@ make_tsv() {
     [[ "$output" == *"not found"* ]]
 }
 
+@test "print_summary: flaky test shows streak=N when last N runs passed" {
+    local tsv="$TEST_TMPDIR/streak-n.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '4\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=3"* ]]
+}
+
+@test "print_summary: flaky test shows streak=0 when last run failed" {
+    local tsv="$TEST_TMPDIR/streak-0.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=0"* ]]
+}
+
+@test "print_summary: streak is not affected by skipped runs" {
+    local tsv="$TEST_TMPDIR/streak-skip.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tskip\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '4\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=2"* ]]
+}
+
+@test "print_summary: streak counts passes that sandwich a skip" {
+    local tsv="$TEST_TMPDIR/streak-sandwich.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testBar\tskip\n' >> "$tsv"
+    printf '4\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=2"* ]]
+}
+
+@test "print_summary: always-failing test shows streak=0" {
+    local tsv="$TEST_TMPDIR/streak-always-fail.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=0"* ]]
+}
+
+@test "print_summary: flaky test shows unfixed=37% for 1 fail in 100 followed by 100 clean passes" {
+    local tsv="$TEST_TMPDIR/unfixed-math.tsv"
+    make_tsv "$tsv"
+    local i
+    for (( i = 1; i <= 99; i++ )); do
+        printf '%d\tcom.example.FooTest#testBar\tpass\n' "$i" >> "$tsv"
+    done
+    printf '100\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    for (( i = 101; i <= 200; i++ )); do
+        printf '%d\tcom.example.FooTest#testBar\tpass\n' "$i" >> "$tsv"
+    done
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=100"* ]]
+    [[ "$output" == *"unfixed=37%"* ]]
+}
+
+@test "print_summary: unfixed not shown when streak is 0" {
+    local tsv="$TEST_TMPDIR/unfixed-streak0.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+
+    run print_summary "$tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"streak=0"* ]]
+    [[ "$output" != *"unfixed="* ]]
+}
+
+@test "print_summary: unfixed not shown in from_iter path" {
+    local tsv="$TEST_TMPDIR/unfixed-from-iter.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testBar\tfail\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+    printf '3\tcom.example.FooTest#testBar\tpass\n' >> "$tsv"
+
+    run print_summary "$tsv" 1
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"unfixed="* ]]
+}
+
 @test "print_summary with from_iter only includes later iterations and shows This Run label" {
     local tsv="$TEST_TMPDIR/multi-iter.tsv"
     make_tsv "$tsv"
@@ -200,6 +304,51 @@ make_tsv() {
     [ ! -d "$repo/target/find-flaky-tests" ]
 
     rm -rf "$repo" "$sentinel"
+}
+
+# ---- init_results_file ----
+
+# ---- load_failing_classes ----
+
+@test "load_failing_classes: exits with error when all tests are passing" {
+    local tsv="$TEST_TMPDIR/all-pass.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+    printf '2\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+
+    run load_failing_classes "$tsv"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"passing"* ]]
+}
+
+@test "load_failing_classes: exits with error when file not found" {
+    run load_failing_classes "$TEST_TMPDIR/nonexistent.tsv"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not found"* ]]
+}
+
+@test "load_failing_classes: extracts unique class names from fail/error rows and sets TEST_FILTER" {
+    local tsv="$TEST_TMPDIR/mixed.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest#testA\tpass\n'  >> "$tsv"
+    printf '2\tcom.example.FooTest#testA\tfail\n'  >> "$tsv"
+    printf '1\tcom.example.BarTest#testB\terror\n' >> "$tsv"
+    printf '1\tcom.example.BazTest#testC\tpass\n'  >> "$tsv"
+
+    TEST_FILTER=""
+    load_failing_classes "$tsv"
+    [[ "$TEST_FILTER" == *"com.example.FooTest"* ]]
+    [[ "$TEST_FILTER" == *"com.example.BarTest"* ]]
+    [[ "$TEST_FILTER" != *"com.example.BazTest"* ]]
+    [[ "$TEST_FILTER" != *"#"* ]]
+}
+
+# ---- parse_args --rerun-failures ----
+
+@test "parse_args: --rerun-failures sets RERUN_FAILURES" {
+    RERUN_FAILURES=""
+    parse_args --rerun-failures my-results.tsv
+    [ "$RERUN_FAILURES" = "my-results.tsv" ]
 }
 
 # ---- init_results_file ----

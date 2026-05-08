@@ -13,6 +13,9 @@ OUTPUT_FILE=""
 REPORT_MODE=false
 MAVEN_CMD=""
 REPO_ROOT="$PWD"
+RERUN_FAILURES=""
+RERUN_CLASSES=()
+TOTAL_TESTS_RUN=0
 
 usage() {
     cat <<'EOF'
@@ -22,7 +25,11 @@ Run mode (default):
   --iterations N    Stop after N iterations (default: run until Ctrl-C)
   --test TEST       Maven -Dtest value (e.g. ThrottlingFilterTest)
   --module MODULE   Maven -pl value (e.g. core; default: all modules)
-  --output FILE     Results file (default: flaky-results-<timestamp>.tsv)
+  --output FILE     Results file (default: flaky-results-<timestamp>.tsv,
+                    or FILE when --rerun-failures is used without --output)
+  --rerun-failures FILE
+                    Rerun only test classes that had at least one failure in FILE.
+                    Defaults --output to FILE. Mutually exclusive with --test.
   --root DIR        Repository root (default: current directory)
   --help
 
@@ -39,6 +46,7 @@ parse_args() {
             --module)     MODULE="$2"; shift 2 ;;
             --output)     OUTPUT_FILE="$2"; shift 2 ;;
             --root)       REPO_ROOT="$(cd "$2" && pwd)"; shift 2 ;;
+            --rerun-failures) RERUN_FAILURES="$2"; shift 2 ;;
             --report)     REPORT_MODE=true; OUTPUT_FILE="$2"; shift 2 ;;
             --help)       usage; exit 0 ;;
             *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
@@ -46,7 +54,11 @@ parse_args() {
     done
 
     if [[ "$REPORT_MODE" == false && -z "$OUTPUT_FILE" ]]; then
-        OUTPUT_FILE="flaky-results-$(date +%Y%m%d-%H%M%S).tsv"
+        if [[ -n "$RERUN_FAILURES" ]]; then
+            OUTPUT_FILE="$RERUN_FAILURES"
+        else
+            OUTPUT_FILE="flaky-results-$(date +%Y%m%d-%H%M%S).tsv"
+        fi
     fi
 }
 
@@ -60,6 +72,31 @@ build_maven_cmd() {
     fi
     cmd+=" -B test"
     echo "$cmd"
+}
+
+load_failing_classes() {
+    local tsv_file="$1"
+    if [[ ! -f "$tsv_file" ]]; then
+        printf 'Error: --rerun-failures: file not found: %s\n' "$tsv_file" >&2
+        exit 1
+    fi
+    mapfile -t RERUN_CLASSES < <(
+        awk -F'\t' '
+            /^#/ { next }
+            NF != 3 { next }
+            ($3 == "fail" || $3 == "error") {
+                n = split($2, a, "#")
+                if (n >= 1) print a[1]
+            }
+        ' "$tsv_file" | sort -u
+    )
+    if [[ ${#RERUN_CLASSES[@]} -eq 0 ]]; then
+        printf 'Error: all tests in "%s" are passing; nothing to rerun.\n' "$tsv_file" >&2
+        exit 1
+    fi
+    local joined
+    printf -v joined '%s,' "${RERUN_CLASSES[@]}"
+    TEST_FILTER="${joined%,}"
 }
 
 init_results_file() {
@@ -177,6 +214,8 @@ print_summary() {
     }
     {
         iter = $1 + 0; key = $2; status = $3
+        if      (status == "pass")                      streak[key]++
+        else if (status == "fail" || status == "error") streak[key] = 0
         if (from_iter > 0 && iter <= from_iter) next
         if (iter > max_iter) max_iter = iter
         if      (status == "pass")  pass[key]++
@@ -222,7 +261,18 @@ print_summary() {
                 p = pass[key]+0; f = fail[key]+0; e = err[key]+0; s = skip[key]+0
                 total = p + f + e + s
                 pct = int(p * 100 / total)
-                printf "  %3d%% pass  %-70s  pass=%-4d fail=%-4d error=%d\n", pct, key, p, f, e
+                if (from_iter == 0) {
+                    sk = streak[key]+0
+                    if (sk > 0) {
+                        total_before = p - sk + f + e
+                        p_chance = ((p - sk) / total_before) ^ sk
+                        unfixed_pct = int(p_chance * 100 + 0.5)
+                        printf "  %3d%% pass  %-70s  pass=%-4d fail=%-4d error=%d  streak=%d  unfixed=%d%%\n", pct, key, p, f, e, sk, unfixed_pct
+                    } else {
+                        printf "  %3d%% pass  %-70s  pass=%-4d fail=%-4d error=%d  streak=%d\n", pct, key, p, f, e, sk
+                    }
+                } else
+                    printf "  %3d%% pass  %-70s  pass=%-4d fail=%-4d error=%d\n", pct, key, p, f, e
             }
         }
 
@@ -232,6 +282,9 @@ print_summary() {
         } else {
             for (i = 0; i < n_always_fail; i++) {
                 key = always_fail_keys[i]
+                if (from_iter == 0)
+                printf "  %-70s  fail=%d error=%d  streak=%d\n", key, fail[key]+0, err[key]+0, streak[key]+0
+            else
                 printf "  %-70s  fail=%d error=%d\n", key, fail[key]+0, err[key]+0
             }
         }
@@ -395,6 +448,14 @@ main() {
 
     parse_args "$@"
 
+    if [[ -n "$RERUN_FAILURES" && -n "$TEST_FILTER" ]]; then
+        printf 'Error: --rerun-failures and --test are mutually exclusive.\n' >&2
+        exit 1
+    fi
+    if [[ -n "$RERUN_FAILURES" ]]; then
+        load_failing_classes "$RERUN_FAILURES"
+    fi
+
     if [[ "$REPORT_MODE" == true ]]; then
         print_summary "$OUTPUT_FILE"
         return 0
@@ -414,9 +475,25 @@ main() {
     local _iter_sentinel
     _iter_sentinel=$(mktemp)
 
+    no_tests_ran_error() {
+        if [[ -n "$RERUN_FAILURES" && -n "$MODULE" ]]; then
+            printf '\nError: no tests were executed. Module "%s" may not contain any of the failing test classes from "%s".\n' \
+                "$MODULE" "$RERUN_FAILURES" >&2
+        elif [[ -n "$RERUN_FAILURES" ]]; then
+            printf '\nError: no tests were executed. Verify that the test classes from "%s" are present in the project.\n' \
+                "$RERUN_FAILURES" >&2
+        else
+            printf '\nError: no tests were executed. Check your Maven configuration and surefire reports.\n' >&2
+        fi
+        exit 1
+    }
+
     on_interrupt() {
-        printf '\nInterrupted after %d iteration(s).\n' "$iterations_done"
+        printf '\nInterrupted after %d iteration(s).\n' "$(( iterations_done - start_iter ))"
         rm -f "$_iter_sentinel"
+        if [[ $TOTAL_TESTS_RUN -eq 0 ]]; then
+            no_tests_ran_error
+        fi
         if [[ "$start_iter" -gt 0 ]]; then
             print_summary "$OUTPUT_FILE" "$start_iter"
             print_delta   "$OUTPUT_FILE" "$start_iter"
@@ -434,7 +511,11 @@ main() {
         local mvn_exit=0
         eval "$MAVEN_CMD" || mvn_exit=$?
 
-        parse_all_reports "$iterations_done" "$_iter_sentinel" >> "$OUTPUT_FILE"
+        local iter_output iter_count
+        iter_output=$(parse_all_reports "$iterations_done" "$_iter_sentinel")
+        iter_count=$(printf '%s\n' "$iter_output" | awk '/^[0-9]/{n++} END{print n+0}')
+        TOTAL_TESTS_RUN=$(( TOTAL_TESTS_RUN + iter_count ))
+        printf '%s\n' "$iter_output" >> "$OUTPUT_FILE"
         copy_failure_reports "$iterations_done" "$_iter_sentinel"
         print_progress "$iterations_done" "$mvn_exit" "$OUTPUT_FILE"
 
@@ -442,6 +523,10 @@ main() {
             break
         fi
     done
+
+    if [[ $TOTAL_TESTS_RUN -eq 0 ]]; then
+        no_tests_ran_error
+    fi
 
     if [[ "$start_iter" -gt 0 ]]; then
         print_summary "$OUTPUT_FILE" "$start_iter"
