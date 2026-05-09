@@ -16,6 +16,7 @@ REPO_ROOT="$PWD"
 RERUN_FAILURES=""
 RERUN_CLASSES=()
 TOTAL_TESTS_RUN=0
+FAIL_FAST=false
 
 usage() {
     cat <<'EOF'
@@ -31,6 +32,7 @@ Run mode (default):
                     Rerun only test classes that had at least one failure in FILE.
                     Defaults --output to FILE. Mutually exclusive with --test.
   --root DIR        Repository root (default: current directory)
+  --fail-fast       Stop after the first iteration that contains a failure
   --help
 
 Report mode:
@@ -48,6 +50,7 @@ parse_args() {
             --root)       REPO_ROOT="$(cd "$2" && pwd)"; shift 2 ;;
             --rerun-failures) RERUN_FAILURES="$2"; shift 2 ;;
             --report)     REPORT_MODE=true; OUTPUT_FILE="$2"; shift 2 ;;
+            --fail-fast)  FAIL_FAST=true; shift ;;
             --help)       usage; exit 0 ;;
             *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
         esac
@@ -517,6 +520,11 @@ main() {
         printf '%s\n' "$iter_output" >> "$OUTPUT_FILE"
         copy_failure_reports "$iterations_done" "$_iter_sentinel"
         print_progress "$iterations_done" "$mvn_exit" "$OUTPUT_FILE" "$start_iter"
+
+        if [[ "$FAIL_FAST" == true ]] && printf '%s\n' "$iter_output" | grep -qE $'\t(fail|error)$'; then
+            printf 'Stopping after first failure (--fail-fast).\n'
+            break
+        fi
 
         if [[ -n "$ITERATIONS" && "$iterations_done" -ge "$ITERATIONS" ]]; then
             break

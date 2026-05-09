@@ -365,6 +365,20 @@ make_tsv() {
     [ "$RERUN_FAILURES" = "my-results.tsv" ]
 }
 
+# ---- parse_args --fail-fast ----
+
+@test "parse_args: --fail-fast sets FAIL_FAST to true" {
+    FAIL_FAST=false
+    parse_args --fail-fast
+    [ "$FAIL_FAST" = "true" ]
+}
+
+@test "parse_args: FAIL_FAST remains false when --fail-fast is not given" {
+    FAIL_FAST=false
+    parse_args --iterations 3
+    [ "$FAIL_FAST" = "false" ]
+}
+
 # ---- init_results_file ----
 
 @test "init_results_file: creates header when file does not exist" {
