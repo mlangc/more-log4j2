@@ -485,10 +485,11 @@ class AsyncHttpAppenderTest {
                 }),
                 StressTestCase.tweaked(t -> {
                     t.parallelism = 4;
-                    t.maxBlockOnOverflowMs = 10_000;
                     t.serverFailureRate = 0.1;
-                    t.retries = 10;
+                    t.maxBackoffMs = 1;
+                    t.retries = 100;
                     t.maxBatchLogEvents = 200;
+                    t.logsPerThread = 10_000;
                 }),
                 StressTestCase.tweaked(t -> {
                     t.medianServerResponseMs = 10;
@@ -511,6 +512,8 @@ class AsyncHttpAppenderTest {
     @ParameterizedTest
     @MethodSource("stressTestCases")
     void shouldWorkReliablyUnderStress(StressTestCase testCase) {
+        var timeoutMs = 500;
+
         var url = testCase.https ? wireMockHttpsUrl : wireMockHttpUrl;
 
         var timeoutRatio = testCase.mustEventuallySucceed ? 0.0 : 0.1;
@@ -519,7 +522,7 @@ class AsyncHttpAppenderTest {
         Runnable configureWireMock = () -> {
             var mapping = post(wireMockPath);
             configureMappingWithRandomFailuresAndTimeouts(
-                    mapping, 1500, testCase.serverFailureRate, testCase.medianServerResponseMs, testCase.medianServerResponseSigma, timeoutRatio, nonRetryableRatio);
+                    mapping, timeoutMs + timeoutMs / 4, testCase.serverFailureRate, testCase.medianServerResponseMs, testCase.medianServerResponseSigma, timeoutRatio, nonRetryableRatio);
             wireMockExt.stubFor(mapping);
         };
 
@@ -538,6 +541,8 @@ class AsyncHttpAppenderTest {
                         .addAttribute("maxBatchLogEvents", testCase.maxBatchLogEvents)
                         .addAttribute("maxBlockOnOverflowMs", testCase.maxBlockOnOverflowMs)
                         .addAttribute("retries", testCase.retries)
+                        .addAttribute("readTimeoutMs", timeoutMs)
+                        .addAttribute("connectTimeoutMs", timeoutMs)
                         .addAttribute("maxBackoffMs", testCase.maxBackoffMs)
                         .addAttribute("httpClientSslConfigSupplier", AsyncHttpAppenderTest.class.getCanonicalName() + "$" + SslConfigSupplier.class.getSimpleName())
                         .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
@@ -564,7 +569,7 @@ class AsyncHttpAppenderTest {
                     .toList();
 
             for (CompletableFuture<Void> future : futures) {
-                assertThat(future).succeedsWithin(40, TimeUnit.SECONDS);
+                assertThat(future).succeedsWithin(10, TimeUnit.SECONDS);
             }
         } finally {
             assertThat(context.stop(15, TimeUnit.SECONDS)).isTrue();

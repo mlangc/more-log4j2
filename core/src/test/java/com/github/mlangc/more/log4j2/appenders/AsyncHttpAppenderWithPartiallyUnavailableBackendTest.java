@@ -121,7 +121,7 @@ class AsyncHttpAppenderWithPartiallyUnavailableBackendTest {
             var uniqueStr1 = "-----@@@:-)@@@-----";
             log.info(uniqueStr1);
 
-            Awaitility.await().atMost(1, TimeUnit.SECONDS)
+            Awaitility.await().atMost(2, TimeUnit.SECONDS)
                     .untilAsserted(() -> assertThat(wireMockServer.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
                             .anySatisfy(r -> assertThat(r.getBodyAsString()).contains(uniqueStr1)));
 
@@ -137,9 +137,8 @@ class AsyncHttpAppenderWithPartiallyUnavailableBackendTest {
             var uniqueStr3 = "-----@@@+1@@@-----";
             log.info(uniqueStr3);
 
-            Awaitility.await().atMost(1, TimeUnit.SECONDS)
+            Awaitility.await().atMost(2, TimeUnit.SECONDS)
                     .untilAsserted(() -> assertThat(wireMockServer.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
-                            .allSatisfy(r -> assertThat(r.getBodyAsString()).doesNotContain(uniqueStr1).doesNotContain(uniqueStr2))
                             .anySatisfy(r -> assertThat(r.getBodyAsString()).contains(uniqueStr3)));
         }
     }

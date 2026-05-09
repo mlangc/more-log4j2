@@ -49,7 +49,7 @@ public class WireMockHelpers {
 
         var resp = respDefWithMetadata.respDef;
         if (medianResponseTime > 0 && !respDefWithMetadata.timeoutSet) {
-            resp.withLogNormalRandomDelay(medianResponseTime, responseTimeSigma);
+            resp.withLogNormalRandomDelay(medianResponseTime, responseTimeSigma, triggerTimeoutMs * 0.75);
         }
 
         mappingBuilder.willReturn(resp);
