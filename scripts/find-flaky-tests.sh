@@ -410,7 +410,7 @@ print_delta() {
 }
 
 print_progress() {
-    local iter="$1" mvn_exit="$2" file="$3"
+    local iter="$1" mvn_exit="$2" file="$3" start_iter="${4:-0}"
     local this_pass=0 this_fail=0 this_err=0
 
     while IFS=$'\t' read -r i _key status; do
@@ -431,7 +431,7 @@ print_progress() {
 
     local iter_disp
     if [[ -n "$ITERATIONS" ]]; then
-        iter_disp="$(printf '%d/%d' "$iter" "$ITERATIONS")"
+        iter_disp="$(printf '%d/%d' "$(( iter - start_iter ))" "$ITERATIONS")"
     else
         iter_disp="$iter"
     fi
@@ -472,7 +472,6 @@ main() {
     iterations_done=$(awk -F'\t' '!/^#/ && NF==3 && $1+0>max {max=$1+0} END {print max+0}' "$OUTPUT_FILE")
     local start_iter="$iterations_done"
 
-    local _iter_sentinel
     _iter_sentinel=$(mktemp)
 
     no_tests_ran_error() {
@@ -517,7 +516,7 @@ main() {
         TOTAL_TESTS_RUN=$(( TOTAL_TESTS_RUN + iter_count ))
         printf '%s\n' "$iter_output" >> "$OUTPUT_FILE"
         copy_failure_reports "$iterations_done" "$_iter_sentinel"
-        print_progress "$iterations_done" "$mvn_exit" "$OUTPUT_FILE"
+        print_progress "$iterations_done" "$mvn_exit" "$OUTPUT_FILE" "$start_iter"
 
         if [[ -n "$ITERATIONS" && "$iterations_done" -ge "$ITERATIONS" ]]; then
             break

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.StreamsTest" tests="3" errors="1" failures="1" skipped="0" time="0.3">
+  <testcase name="testPassing" classname="com.example.StreamsTest" time="0.05">
+    <system-out><![CDATA[passing stdout]]></system-out>
+  </testcase>
+  <testcase name="testFailing" classname="com.example.StreamsTest" time="0.05">
+    <failure message="expected true">java.lang.AssertionError</failure>
+    <system-out><![CDATA[some stdout output]]></system-out>
+    <system-err><![CDATA[some stderr output]]></system-err>
+  </testcase>
+  <testcase name="testErroringNoStreams" classname="com.example.StreamsTest" time="0.05">
+    <error message="NullPointerException">java.lang.NullPointerException</error>
+  </testcase>
+</testsuite>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="1.591" tests="19" errors="0" skipped="0" failures="1">
+  <properties>
+    <property name="java.version" value="17.0.18"/>
+    <property name="os.name" value="Mac OS X"/>
+  </properties>
+  <testcase name="shouldBehaveProperlyInSimpleScenarioWithFakeTicker" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.002"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[1]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.112"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[2]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.111"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[3]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.111"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[4]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.111"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[5]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.111"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[6]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.116"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[7]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.122"/>
+  <testcase name="shouldThrottleExcessiveLogsFromMultipleThreads(int)[8]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.121"/>
+  <testcase name="shouldThrottleLogsFromSingleThreadWithFilterAtLogger(LoggerContext, CountingAppender)" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.137">
+    <failure message="&#10;expected: 2L&#10; but was: 3L" type="org.opentest4j.AssertionFailedError"><![CDATA[org.opentest4j.AssertionFailedError:
+
+expected: 2L
+ but was: 3L
+	at com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest.shouldThrottleLogsFromSingleThreadWithFilterAtLogger(ThrottlingFilterTest.java:208)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+]]></failure>
+  </testcase>
+  <testcase name="shouldBehaveProperlyIfCalledWithAllOverloadsAndFakeTicker" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.027"/>
+  <testcase name="shouldRejectIllegalIntervalAndMaxEvents(int, int)[1]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.039"/>
+  <testcase name="shouldRejectIllegalIntervalAndMaxEvents(int, int)[2]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.004"/>
+  <testcase name="shouldRejectIllegalIntervalAndMaxEvents(int, int)[3]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.015"/>
+  <testcase name="shouldRejectIllegalIntervalAndMaxEvents(int, int)[4]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.004"/>
+  <testcase name="shouldRejectIllegalIntervalAndMaxEvents(int, int)[5]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.006"/>
+  <testcase name="shouldRejectIllegalIntervalAndMaxEvents(int, int)[6]" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.008"/>
+  <testcase name="shouldAllowOnlyMinimalAmountOfAdditionalLogsDueToRace" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.239"/>
+  <testcase name="shouldThrottleLogsFromSingleThread(LoggerContext, CountingAppender)" classname="com.github.mlangc.more.log4j2.filters.ThrottlingFilterTest" time="0.112"/>
+</testsuite>

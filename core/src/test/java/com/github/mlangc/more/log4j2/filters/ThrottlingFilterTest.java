@@ -199,13 +199,17 @@ class ThrottlingFilterTest {
         ExtendedLogger log = context.getLogger(getClass());
         long intervalMillis = TimeUnit.NANOSECONDS.toMillis(filter.intervalNanos());
 
-        TestHelpers.logWithAllOverloads(log, null, "one");
-        TestHelpers.logWithAllOverloads(log, null, "two");
-        assertThat(countingAppender.currentCount()).isOne();
+        long intervals = countTouchedIntervals(filter.intervalNanos(), () -> {
+            TestHelpers.logWithAllOverloads(log, null, "one");
+            TestHelpers.logWithAllOverloads(log, null, "two");
+        });
 
+        assertThat(countingAppender.currentCount()).isBetween(1L, intervals);
         Thread.sleep(intervalMillis + 1);
-        TestHelpers.logWithAllOverloads(log, null, "three");
-        assertThat(countingAppender.currentCount()).isEqualTo(2);
+
+        long countBefore = countingAppender.currentCount();
+        intervals = countTouchedIntervals(filter.intervalNanos(), () -> TestHelpers.logWithAllOverloads(log, null, "three"));
+        assertThat(countingAppender.currentCount()).isBetween(countBefore + 1, countBefore + intervals);
     }
 
     @Test
@@ -216,13 +220,17 @@ class ThrottlingFilterTest {
         ExtendedLogger log = context.getLogger(getClass());
         long intervalMillis = TimeUnit.NANOSECONDS.toMillis(filter.intervalNanos());
 
-        TestHelpers.logWithAllOverloads(log, null, "one");
-        TestHelpers.logWithAllOverloads(log, null, "two");
-        assertThat(countingAppender.currentCount()).isOne();
+        long intervals = countTouchedIntervals(filter.intervalNanos(), () -> {
+            TestHelpers.logWithAllOverloads(log, null, "one");
+            TestHelpers.logWithAllOverloads(log, null, "two");
+        });
 
+        assertThat(countingAppender.currentCount()).isBetween(1L, intervals);
         Thread.sleep(intervalMillis + 1);
-        TestHelpers.logWithAllOverloads(log, null, "three");
-        assertThat(countingAppender.currentCount()).isEqualTo(2);
+
+        long countBefore = countingAppender.currentCount();
+        intervals = countTouchedIntervals(filter.intervalNanos(), () -> TestHelpers.logWithAllOverloads(log, null, "three"));
+        assertThat(countingAppender.currentCount()).isBetween(countBefore + 1, countBefore + intervals);
     }
 
     @ParameterizedTest
@@ -269,5 +277,17 @@ class ThrottlingFilterTest {
         } finally {
             StatusLogger.getLogger().removeListener(statusListener);
         }
+    }
+
+    private static long countTouchedIntervals(long intervalNanos, long fromNanos, long toNanos) {
+        long fromNanos0 = (fromNanos / intervalNanos) * intervalNanos;
+        return Math.max(1, (toNanos - fromNanos0 + intervalNanos - 1) / intervalNanos);
+    }
+
+    private static long countTouchedIntervals(long intervalNanos, Runnable op) {
+        long fromNanos = System.nanoTime();
+        op.run();
+        long toNanos = System.nanoTime();
+        return countTouchedIntervals(intervalNanos, fromNanos, toNanos);
     }
 }

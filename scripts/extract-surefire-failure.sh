@@ -7,10 +7,13 @@ if (( BASH_VERSINFO[0] < 5 )); then
 fi
 
 USE_CLIPBOARD=false
+EXTRACT_SYSTEM_OUT=false
+EXTRACT_SYSTEM_ERR=false
+EXTRACT_ALL=false
 
 usage() {
     cat <<'EOF'
-Usage: extract-surefire-failure.sh [--clipboard] <report.xml> [index]
+Usage: extract-surefire-failure.sh [--clipboard] [--system-out] [--system-err] [--all] <report.xml> [index]
 
 Extract failure/error messages from a Maven Surefire XML report.
 
@@ -19,12 +22,20 @@ Arguments:
   index        1-based index of the failure to extract (optional)
 
 Options:
-  --clipboard  Copy output to clipboard instead of printing to stdout
-  --help       Show this help
+  --clipboard   Copy output to clipboard instead of printing to stdout
+  --system-out  Extract system-out of the selected (or sole) failing testcase
+  --system-err  Extract system-err of the selected (or sole) failing testcase
+  --all         Extract from all relevant testcases with name headers.
+                Without stream flags: all failure/error messages (failing testcases only).
+                With --system-out/--system-err: streams from all testcases, skipping empty.
+  --help        Show this help
 
 If the report contains exactly one failure or error, its stack trace is printed
 (or copied). If there are multiple, a numbered list is shown. Pass an index to
 select a specific entry.
+
+When --system-out or --system-err is given, only the requested stream(s) are
+extracted instead of the failure/error text.
 EOF
 }
 
@@ -59,13 +70,119 @@ extract_message() {
     printf '%s' "$msg"
 }
 
+extract_stream() {
+    local file="$1" index="$2" element="$3"
+    local content
+    content=$(xmllint --xpath "string(//testcase[failure or error][$index]/$element)" \
+        "$file" 2>/dev/null || true)
+    printf '%s' "$content"
+}
+
+extract_all() {
+    local file="$1"
+    local output="" separator=""
+
+    if [[ "$EXTRACT_SYSTEM_OUT" == false && "$EXTRACT_SYSTEM_ERR" == false ]]; then
+        local -a names=()
+        mapfile -t names < <(
+            xmllint --xpath "//testcase[failure or error]/@name" "$file" 2>/dev/null \
+            | awk -F'"' '{for(i=2;i<=NF;i+=2) print $i}' || true
+        )
+        local total=${#names[@]}
+        if (( total == 0 )); then
+            printf 'No failures or errors found in %s\n' "$file" >&2
+            return
+        fi
+        local i msg
+        for (( i = 1; i <= total; i++ )); do
+            msg=$(extract_message "$file" "$i")
+            output+="${separator}=== ${names[$((i-1))]} ==="$'\n'"$msg"
+            separator=$'\n\n'
+        done
+    else
+        local -a elements=()
+        [[ "$EXTRACT_SYSTEM_OUT" == true ]] && elements+=("system-out")
+        [[ "$EXTRACT_SYSTEM_ERR" == true ]] && elements+=("system-err")
+        local -a all_names=()
+        mapfile -t all_names < <(
+            xmllint --xpath "//testcase/@name" "$file" 2>/dev/null \
+            | awk -F'"' '{for(i=2;i<=NF;i+=2) print $i}' || true
+        )
+        local total=${#all_names[@]}
+        local i elem content testcase_content subsep
+        for (( i = 1; i <= total; i++ )); do
+            local name="${all_names[$((i-1))]}"
+            testcase_content="" subsep=""
+            for elem in "${elements[@]}"; do
+                content=$(xmllint --xpath "string(//testcase[$i]/$elem)" \
+                    "$file" 2>/dev/null || true)
+                if [[ -n "$content" ]]; then
+                    if (( ${#elements[@]} > 1 )); then
+                        testcase_content+="${subsep}--- $elem ---"$'\n'"$content"
+                        subsep=$'\n'
+                    else
+                        testcase_content+="$content"
+                    fi
+                fi
+            done
+            if [[ -n "$testcase_content" ]]; then
+                output+="${separator}=== $name ==="$'\n'"$testcase_content"
+                separator=$'\n\n'
+            fi
+        done
+        if [[ -z "$output" ]]; then
+            printf 'No captured stream content found in %s\n' "$file" >&2
+            return
+        fi
+    fi
+
+    copy_or_print "$output"
+}
+
+do_extract() {
+    local file="$1" index="$2"
+    if [[ "$EXTRACT_SYSTEM_OUT" == false && "$EXTRACT_SYSTEM_ERR" == false ]]; then
+        copy_or_print "$(extract_message "$file" "$index")"
+        return
+    fi
+    local -a elements=()
+    [[ "$EXTRACT_SYSTEM_OUT" == true ]] && elements+=("system-out")
+    [[ "$EXTRACT_SYSTEM_ERR" == true ]] && elements+=("system-err")
+    local -a results=()
+    local elem content
+    for elem in "${elements[@]}"; do
+        content=$(extract_stream "$file" "$index" "$elem")
+        if [[ -z "$content" ]]; then
+            printf 'Note: no %s captured for testcase [%d]\n' "$elem" "$index" >&2
+        fi
+        results+=("$content")
+    done
+    if (( ${#elements[@]} == 1 )); then
+        copy_or_print "${results[0]}"
+    else
+        local combined="" sep="" i
+        for (( i = 0; i < ${#elements[@]}; i++ )); do
+            if [[ -n "${results[$i]}" ]]; then
+                combined+="${sep}=== ${elements[$i]} ==="$'\n'"${results[$i]}"
+                sep=$'\n'
+            fi
+        done
+        if [[ -n "$combined" ]]; then
+            copy_or_print "$combined"
+        fi
+    fi
+}
+
 main() {
     local -a _positional=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --clipboard) USE_CLIPBOARD=true; shift ;;
-            --help)      usage; exit 0 ;;
+            --clipboard)   USE_CLIPBOARD=true;        shift ;;
+            --system-out)  EXTRACT_SYSTEM_OUT=true;   shift ;;
+            --system-err)  EXTRACT_SYSTEM_ERR=true;   shift ;;
+            --all)         EXTRACT_ALL=true;           shift ;;
+            --help)        usage; exit 0 ;;
             --*) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
             *) _positional+=("$1"); shift ;;
         esac
@@ -82,6 +199,15 @@ main() {
     if [[ ! -f "$file" ]]; then
         printf 'Error: file not found: %s\n' "$file" >&2
         exit 1
+    fi
+
+    if [[ "$EXTRACT_ALL" == true ]]; then
+        if [[ -n "$index" ]]; then
+            printf 'Error: --all and an index are mutually exclusive\n' >&2
+            exit 1
+        fi
+        extract_all "$file"
+        return
     fi
 
     local -a _names=() _classnames=()
@@ -106,16 +232,12 @@ main() {
             printf 'Error: index %s out of range (1-%d)\n' "$index" "$count" >&2
             exit 1
         fi
-        local msg
-        msg=$(extract_message "$file" "$index")
-        copy_or_print "$msg"
+        do_extract "$file" "$index"
         return
     fi
 
     if (( count == 1 )); then
-        local msg
-        msg=$(extract_message "$file" 1)
-        copy_or_print "$msg"
+        do_extract "$file" 1
         return
     fi
 

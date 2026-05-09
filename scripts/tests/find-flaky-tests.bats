@@ -52,6 +52,20 @@ teardown() {
     [[ "${lines[0]}" == "42"$'\t'* ]]
 }
 
+# ---- print_progress ----
+
+@test "print_progress: iter display is run-relative when continuing from an existing file" {
+    local tsv="$TEST_TMPDIR/progress.tsv"
+    make_tsv "$tsv"
+    printf '320\tcom.example.FooTest#testA\tpass\n' >> "$tsv"
+
+    ITERATIONS=15
+    run print_progress 320 0 "$tsv" 319
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1/15"* ]]
+    [[ "$output" != *"320/15"* ]]
+}
+
 # ---- print_summary ----
 
 make_tsv() {
