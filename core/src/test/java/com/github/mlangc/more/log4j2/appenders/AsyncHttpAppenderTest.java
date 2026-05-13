@@ -1260,7 +1260,7 @@ class AsyncHttpAppenderTest {
         log.warn("tada");
         log.warn("tödö");
         log.warn("trörö");
-        context.close();
+        assertThat(context.stop(5, TimeUnit.SECONDS)).isTrue();
 
         List<LoggedRequest> postRequests = wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
         assertThat(postRequests)
