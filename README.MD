@@ -148,11 +148,11 @@ difference.
 
 ### Why does FilterRouteIf require ACCEPT?
 
-As mentioned above, a `FilterRoute` is only taken if it is the first route containing a nested `FilterRouteIf`,
-that evaluates to `ACCEPT`. This might seem counter-intuitive, since `onMatch=NEUTRAL`
-[by default](https://logging.apache.org/log4j/2.x/manual/filters.html#common-configuration-attributes).
-Choosing the first route where `FilterRouteIf` returns `NEUTRAL` even though a later route returns `ACCEPT`, would be
-equally surprising. Requiring `ACCEPT` seems like the lesser evil to me, but I'm open for user feedback on this question.
+As mentioned above, a `FilterRoute` is only taken if it is the first route containing a nested `FilterRouteIf`, that evaluates to
+`ACCEPT`. This might seem counter-intuitive, since `onMatch=NEUTRAL`
+[by default](https://logging.apache.org/log4j/2.x/manual/filters.html#common-configuration-attributes). Choosing the first route
+where `FilterRouteIf` returns `NEUTRAL` even though a later route returns `ACCEPT`, would be equally surprising. Requiring
+`ACCEPT` seems like the lesser evil to me, but I'm open for user feedback on this question.
 
 ## AcceptAllFilter & NeutralFilter
 
@@ -219,8 +219,7 @@ that are throttled. This makes it extremely lightweight.
 every invocation, which implies calls to `System.nanoTime` and some locking. In addition, the implementation moves
 `LogDelay` objects between a `DelayQueue` and a `ConcurrentLinkedQueue`, which causes the allocation of queue nodes.
 
-If you are interested in the details, please consider to take a look at the existing JMH benchmarks you find in this
-repository.
+If you are interested in the details, please consider to take a look at the existing JMH benchmarks you find in this repository.
 
 Finally, it's important to keep things in perspective: None of this matters, unless millions of logs are filtered out per second,
 or you are extremely sensitive about allocations.
@@ -236,12 +235,12 @@ log monitoring solutions, like [Dynatrace](#Publishing-Logs-To-Dynatrace), [Data
 In order to better understand the impact of the various configuration options the appender offers, it is useful to have a brief
 look at its overall architecture:
 
-![AsyncHttpAppender Archtecture](/doc/diagrams/AsyncHttpAppenderArchitecture.png)
+![AsyncHttpAppender Architecture](/doc/diagrams/AsyncHttpAppenderArchitecture.png)
 
 Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed to the batch buffer, and
 a job to drain the buffer is scheduled. Buffered batches are handled in a FIFO manner, and pushed to the configured HTTP backend.
 
-Draining of the batch buffer happens asynchronously, and is accomplished by a single thead, that uses the asynchronous API of
+Draining of the batch buffer happens asynchronously, and is accomplished by a single thread, that uses the asynchronous API of
 the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html).
 
 The purpose of the batch buffer is to absorb short log bursts, and backend hiccups. It is expected to be empty or almost empty
@@ -272,27 +271,27 @@ events in this batch are lost. This will be accompanied by a warning being logge
 happens by configuring a custom `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` using the
 `batchCompletionListener` option for monitoring purposes.
 
-### Will I loose logs on shutdown?
+### Will I lose logs on shutdown?
 
 Depending on your setup you might want to set
 [log4j2.shutdownHookEnabled](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled)
-to true, to avoid loosing logs on regular shutdowns. `log4j2.shutdownHookEnabled` defaults to false if a `Servlet` class is found
+to true, to avoid losing logs on regular shutdowns. `log4j2.shutdownHookEnabled` defaults to false if a `Servlet` class is found
 on your classpath (see
 [log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how long
 the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
 
-### I've set `log4j2.shutdownHookEnabled`, but I'm still loosing some logs when my tests are shutdown.
+### I've set `log4j2.shutdownHookEnabled`, but I'm still losing some logs when my tests are shutdown.
 
 This might be because Spring
 uses [a custom property source](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html)
 that disables the log4j2 shutdown hook.
 
 To make sure that the appender is flushed whenever your junit test suite is terminated, add
-`com.github.mlangc:more-log4j2-junit` as a test dependency. This installs a custom 
+`com.github.mlangc:more-log4j2-junit` as a test dependency. This installs a custom
 [TestExecutionListener](https://docs.junit.org/6.0.1/api/org.junit.platform.launcher/org/junit/platform/launcher/TestExecutionListener.html)
 via the [ServiceLoader facility](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/ServiceLoader.html).
 
-### Will I loose logs if the application crashes?
+### Will I lose logs if the application crashes?
 
 Yes, there is no way an asynchronous appender can make sure that buffers are drained if the application crashes. However, there
 are some configuration options that have an influence on the amount of logs that might be lost:
@@ -301,10 +300,10 @@ are some configuration options that have an influence on the amount of logs that
   downsides are more HTTP requests and potentially worse compression rates.
 * Setting `maxBatchBufferBatches` and `maxBatchBufferBytes` to smaller values will limit the amount of buffered batches, that
   accumulate if the backend is not keeping up. On the other hand, a small batch buffer might not be able to absorb short spikes in
-  log volumes, or brief hickups of the backend.
+  log volumes, or brief hiccups of the backend.
 
-However, if you are worrying about lost logs in the event of an application crash, `AsyncHttpAppender` is probably [not the 
-right tool for your use case](#should-i-use-the-asynchttpappender-in-production).
+However, if you are worrying about lost logs in the event of an application crash, `AsyncHttpAppender` is
+probably [not the right tool for your use case](#should-i-use-the-asynchttpappender-in-production).
 
 ### Should I use the AsyncHttpAppender in production?
 
@@ -328,8 +327,8 @@ traffic.
 
 ### Memory Usage & Churn
 
-Memory usage of the appender is controlled by `maxBatchBufferBytes`, which defaults to `50 * maxBatchBytes + 250_000`. My advice
-is to not tweak `maxBatchBufferBytes`, but only `maxBatchBytes`.
+Memory usage of the appender is controlled by `maxBatchBufferBytes`, which defaults to
+`maxBatchBufferBatches * maxBatchBytes + 250_000`. My advice is to not tweak `maxBatchBufferBytes`, but only `maxBatchBytes`.
 
 The churn is dominated by temporary byte arrays that are used as a backing storage for rendered log events and batches. It should
 be possible to reduce it significantly, however I decided to keep that for a future release.
@@ -545,44 +544,44 @@ you can use the following recipe:
 
 ### Configuration
 
-| Parameter                       | Type                                                | Default Value                  | Required | Description                                                                                                                                     | Expert Only (not to be tweaked unless for specific needs) |
-|---------------------------------|-----------------------------------------------------|--------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
-| name                            | String                                              | -                              | Yes      | Appender name                                                                                                                                   | No                                                        |
-| url                             | URI                                                 | -                              | Yes      | Target HTTP endpoint                                                                                                                            | No                                                        |
-| layout (nested element)         | Layout                                              | -                              | Yes      | A layout to format log messages                                                                                                                 | No                                                        |
-| lingerMs                        | int                                                 | 5000                           | No       | Max time to wait before sending a batch                                                                                                         | No                                                        |
-| maxBlockOnOverflowMs            | int                                                 | 0                              | No       | Max time to block on overflow before dropping a log event. Configuring a negative value is equvalent to setting `Integer.MAX_VALUE`.            | No                                                        |
-| maxBatchBytes                   | int                                                 | 250_000                        | No       | Max size of a batch (uncompressed). Can be set to `0` to disable batching.                                                                      | No                                                        |
-| maxBatchLogEvents               | int                                                 | 1000                           | No       | Max number of log events per batch                                                                                                              | No                                                        |
-| maxBatchBufferBatches           | int                                                 | 50                             | No       | Max number of batches to buffer (see also `maxBatchBufferBytes`)                                                                                | No                                                        |
-| connectTimeoutMs                | int                                                 | 10_000                         | No       | HTTP connection timeout                                                                                                                         | No                                                        |
-| readTimeoutMs                   | int                                                 | 10_000                         | No       | HTTP read timeout                                                                                                                               | No                                                        |
-| shutdownTimeoutMs               | int                                                 | 15_000                         | No       | Max time to wait till buffers are drained on shutdown. Configuring a negative value is equvalent to setting `Integer.MAX_VALUE`.                | No                                                        |
-| maxConcurrentRequests           | int                                                 | 5                              | No       | Max concurrent HTTP requests                                                                                                                    | No                                                        |
-| method                          | "POST" or "PUT"                                     | "POST"                         | No       | HTTP method (POST/PUT)                                                                                                                          | No                                                        |
-| batchPrefix                     | String                                              | ""                             | No       | Prefix for each batch                                                                                                                           | No                                                        |
-| batchSeparator                  | String                                              | "\n"                           | No       | Separator between log events in a batch                                                                                                         | No                                                        |
-| batchSuffix                     | String                                              | ""                             | No       | Suffix for each batch                                                                                                                           | No                                                        |
-| httpSuccessCodes                | String                                              | 200, 202, 204                  | No       | HTTP status codes considered successful                                                                                                         | No                                                        |
-| httpRetryCodes                  | String                                              | 429, 500, 502, 503, 504        | No       | HTTP status codes that trigger a retry                                                                                                          | No                                                        |
-| retryOnIoError                  | boolean                                             | true                           | No       | Retry on I/O errors                                                                                                                             | No                                                        |
-| retries                         | int                                                 | 5                              | No       | Number of (exponentially backed off) retry attempts                                                                                             | No                                                        |
-| maxBackoffMs                    | int                                                 | 10_000                         | No       | Max backoff time to wait between retries                                                                                                        | No                                                        |
-| contentEncoding                 | encoding (identity or gzip)                         | identity                       | No       | Batch content encoding (identity/gzip)                                                                                                          | No                                                        |
-| filter (nested)                 | Filter                                              | -                              | No       | An optional filter                                                                                                                              | No                                                        |
-| overflowAppenderRef (nested)    | String                                              | null                           | No       | An appender ref to which events are routed if the internal batch buffer is full (the implementation will first wait for `maxBlockOnOverflowMs`) | No                                                        |
-| properties (nested)             | Property[]                                          | -                              | No       | Additional HTTP headers                                                                                                                         | No                                                        |
-| httpClientSslConfigSupplier     | String                                              | null                           | No       | Class name for custom SSL config supplier                                                                                                       | No                                                        |
-| batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing                     | No       | Strategy for inserting separators between events. `if_missing` means that separators are only inserted, if they are not already present.        | No                                                        |
-| maxBatchBufferBytes             | int                                                 | `50 * maxBatchBytes + 250_000` | No       | Max total buffer size for batches (potentially compressed)                                                                                      | Yes                                                       |
-| ignoreExceptions                | boolean                                             | true                           | No       | Ignore exceptions during logging                                                                                                                | Yes                                                       |
-| batchCompletionListener         | String                                              | null                           | No       | Class name for custom batch completion listener                                                                                                 | Yes                                                       |
+| Parameter                       | Type                                                | Default Value                                     | Required | Description                                                                                                                                     | Expert Only (not to be tweaked unless for specific needs) |
+|---------------------------------|-----------------------------------------------------|---------------------------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
+| name                            | String                                              | -                                                 | Yes      | Appender name                                                                                                                                   | No                                                        |
+| url                             | URI                                                 | -                                                 | Yes      | Target HTTP endpoint                                                                                                                            | No                                                        |
+| layout (nested element)         | Layout                                              | -                                                 | Yes      | A layout to format log messages                                                                                                                 | No                                                        |
+| lingerMs                        | int                                                 | 5000                                              | No       | Max time to wait before sending a batch                                                                                                         | No                                                        |
+| maxBlockOnOverflowMs            | int                                                 | 0                                                 | No       | Max time to block on overflow before dropping a log event. Configuring a negative value is equivalent to setting `Integer.MAX_VALUE`.           | No                                                        |
+| maxBatchBytes                   | int                                                 | 250_000                                           | No       | Max size of a batch (uncompressed). Can be set to `0` to disable batching.                                                                      | No                                                        |
+| maxBatchLogEvents               | int                                                 | 1000                                              | No       | Max number of log events per batch                                                                                                              | No                                                        |
+| maxBatchBufferBatches           | int                                                 | 50                                                | No       | Max number of batches to buffer (see also `maxBatchBufferBytes`)                                                                                | No                                                        |
+| connectTimeoutMs                | int                                                 | 10_000                                            | No       | HTTP connection timeout                                                                                                                         | No                                                        |
+| readTimeoutMs                   | int                                                 | 10_000                                            | No       | HTTP read timeout                                                                                                                               | No                                                        |
+| shutdownTimeoutMs               | int                                                 | 15_000                                            | No       | Max time to wait till buffers are drained on shutdown. Configuring a negative value is equivalent to setting `Integer.MAX_VALUE`.               | No                                                        |
+| maxConcurrentRequests           | int                                                 | 5                                                 | No       | Max concurrent HTTP requests                                                                                                                    | No                                                        |
+| method                          | "POST" or "PUT"                                     | "POST"                                            | No       | HTTP method (POST/PUT)                                                                                                                          | No                                                        |
+| batchPrefix                     | String                                              | ""                                                | No       | Prefix for each batch                                                                                                                           | No                                                        |
+| batchSeparator                  | String                                              | "\n"                                              | No       | Separator between log events in a batch                                                                                                         | No                                                        |
+| batchSuffix                     | String                                              | ""                                                | No       | Suffix for each batch                                                                                                                           | No                                                        |
+| httpSuccessCodes                | String                                              | 200, 202, 204                                     | No       | HTTP status codes considered successful                                                                                                         | No                                                        |
+| httpRetryCodes                  | String                                              | 429, 500, 502, 503, 504                           | No       | HTTP status codes that trigger a retry                                                                                                          | No                                                        |
+| retryOnIoError                  | boolean                                             | true                                              | No       | Retry on I/O errors                                                                                                                             | No                                                        |
+| retries                         | int                                                 | 5                                                 | No       | Number of (exponentially backed off) retry attempts                                                                                             | No                                                        |
+| maxBackoffMs                    | int                                                 | 10_000                                            | No       | Max backoff time to wait between retries                                                                                                        | No                                                        |
+| contentEncoding                 | encoding (identity or gzip)                         | identity                                          | No       | Batch content encoding (identity/gzip)                                                                                                          | No                                                        |
+| filter (nested)                 | Filter                                              | -                                                 | No       | An optional filter                                                                                                                              | No                                                        |
+| overflowAppenderRef (nested)    | String                                              | null                                              | No       | An appender ref to which events are routed if the internal batch buffer is full (the implementation will first wait for `maxBlockOnOverflowMs`) | No                                                        |
+| properties (nested)             | Property[]                                          | -                                                 | No       | Additional HTTP headers                                                                                                                         | No                                                        |
+| httpClientSslConfigSupplier     | String                                              | null                                              | No       | Class name for custom SSL config supplier                                                                                                       | No                                                        |
+| batchSeparatorInsertionStrategy | separator insertion strategy (if_missing or always) | if_missing                                        | No       | Strategy for inserting separators between events. `if_missing` means that separators are only inserted, if they are not already present.        | No                                                        |
+| maxBatchBufferBytes             | int                                                 | `maxBatchBufferBatches * maxBatchBytes + 250_000` | No       | Max total buffer size for batches (potentially compressed)                                                                                      | Yes                                                       |
+| ignoreExceptions                | boolean                                             | true                                              | No       | Ignore exceptions during logging                                                                                                                | Yes                                                       |
+| batchCompletionListener         | String                                              | null                                              | No       | Class name for custom batch completion listener                                                                                                 | Yes                                                       |
 
 ### Read this if you want to play with the `batchCompletionListener` option
 
 The `AsyncHttpAppender` can expose internal data for monitoring purposes to a user supplied
 `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` implementation. Though the interface is
-simple, and hopefully self-explanatory, it is very easy to shoot yourself into the foot unless you read the following paragraph
+simple, and hopefully self-explanatory, it is very easy to shoot yourself in the foot unless you read the following paragraph
 carefully:
 
 1. Your `BatchCompletionListener` will be executed by the thread that drains the batch buffer. This thread must never be blocked
@@ -598,7 +597,9 @@ The `CapturingAppender` is meant to be used along with the `com.github.mlangc.mo
 after the
 [LogCaptor](https://github.com/Hakky54/log-captor) library. Unlike the latter, it works exclusively with `log4j2`, and doesn't
 force you to switch to `logback` for your tests. To use it, first adapt your `log4j2-test.xml` according to the following example:
+
 ```xml
+
 <Configuration status="WARN">
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
@@ -610,8 +611,8 @@ force you to switch to `logback` for your tests. To use it, first adapt your `lo
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="Console" />
-            
+            <AppenderRef ref="Console"/>
+
             <!-- Don't forget to add the captor to the root logger; nothing is captured unless LogCaptors are created -->
             <AppenderRef ref="Captor"/>
         </Root>
@@ -621,6 +622,7 @@ force you to switch to `logback` for your tests. To use it, first adapt your `lo
 
 After having prepared your `log4j2-test.xml` like above, you can use the `com.github.mlangc.more.log4j2.captor.LogCaptor` API as
 follows:
+
 ```java
 public class LogCaptorDemoTest {
     private static final Logger LOG = LoggerFactory.getLogger(LogCaptorDemoTest.class);
@@ -815,10 +817,12 @@ that makes sure `AsyncHttpAppender`s are flushed after your tests have finished 
 that might have no effect
 [due to on override from spring boot](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html).
 Simply putting this artifact into your test runtime classpath (`testRuntimeOnly` with Gradle) is enough. The
-`AsyncHttpAppenderFlushingTestExecutionListener` is [registered automatically via the ServiceLoader mechanism](https://docs.junit.org/6.0.1/advanced-topics/launcher-api.html#listeners-custom).
+`AsyncHttpAppenderFlushingTestExecutionListener`
+is [registered automatically via the ServiceLoader mechanism](https://docs.junit.org/6.0.1/advanced-topics/launcher-api.html#listeners-custom).
 
 ### more-log4j2-bom
-`com.github.mlangc:more-log4j2-bom` contains a 
+
+`com.github.mlangc:more-log4j2-bom` contains a
 [BOM](https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html#Bill_of_Materials_.28BOM.29_POMs)
 with module versions. If you use more than one `more-log4j2` module, you can use this BOM to make sure that their versions are
 compatible.
