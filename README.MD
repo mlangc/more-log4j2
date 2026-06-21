@@ -195,6 +195,10 @@ This is roughly what you get with
 
 ### ThrottlingFilter Configuration
 
+Apart from the 
+[standard configuration attributes](https://logging.apache.org/log4j/2.x/manual/filters.html#common-configuration-attributes)
+`onMatch` and `onMismatch`, the `ThrottlingFilter` supports the following settings:
+
 | Attribute | Type                           | Default | Description                                                     |
 |-----------|--------------------------------|---------|-----------------------------------------------------------------|
 | interval  | long                           | -       | The throttling interval.                                        |
@@ -555,7 +559,7 @@ you can use the following recipe:
 | maxBatchLogEvents               | int                                                 | 1000                                              | No       | Max number of log events per batch                                                                                                              | No                                                        |
 | maxBatchBufferBatches           | int                                                 | 50                                                | No       | Max number of batches to buffer (see also `maxBatchBufferBytes`)                                                                                | No                                                        |
 | connectTimeoutMs                | int                                                 | 10_000                                            | No       | HTTP connection timeout                                                                                                                         | No                                                        |
-| readTimeoutMs                   | int                                                 | 10_000                                            | No       | HTTP read timeout                                                                                                                               | No                                                        |
+| readTimeoutMs                   | int                                                 | 10_000                                            | No       | HTTP request timeout                                                                                                                            | No                                                        |
 | shutdownTimeoutMs               | int                                                 | 15_000                                            | No       | Max time to wait till buffers are drained on shutdown. Configuring a negative value is equivalent to setting `Integer.MAX_VALUE`.               | No                                                        |
 | maxConcurrentRequests           | int                                                 | 5                                                 | No       | Max concurrent HTTP requests                                                                                                                    | No                                                        |
 | method                          | "POST" or "PUT"                                     | "POST"                                            | No       | HTTP method (POST/PUT)                                                                                                                          | No                                                        |
