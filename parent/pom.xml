@@ -46,28 +46,28 @@
 
         <!-- Dependency versions -->
         <jmh.version>1.37</jmh.version>
-        <junit.version>5.14.3</junit.version>
-        <log4j.version>2.25.4</log4j.version>
+        <junit.version>5.14.4</junit.version>
+        <log4j.version>2.26.1</log4j.version>
         <pitest-junit5.version>1.2.3</pitest-junit5.version>
-        <error-prone.version>2.47.0</error-prone.version>
-        <spotbugs.version>4.9.8</spotbugs.version>
+        <error-prone.version>2.50.0</error-prone.version>
+        <spotbugs.version>4.10.4</spotbugs.version>
         <wiremock.version>3.13.2</wiremock.version>
 
         <!-- Plugin versions -->
         <maven-wrapper.version>3.3.4</maven-wrapper.version>
-        <maven-surefire.version>3.5.4</maven-surefire.version>
-        <maven-compiler.version>3.14.1</maven-compiler.version>
-        <maven-jar.version>3.5.0</maven-jar.version>
-        <pitest-maven.version>1.22.0</pitest-maven.version>
-        <jacoco.version>0.8.14</jacoco.version>
-        <license-maven.version>2.7.0</license-maven.version>
-        <central-publishing.version>0.9.0</central-publishing.version>
-        <maven-source.version>3.3.1</maven-source.version>
+        <maven-surefire.version>3.5.6</maven-surefire.version>
+        <maven-compiler.version>3.15.0</maven-compiler.version>
+        <maven-jar.version>3.5.1</maven-jar.version>
+        <pitest-maven.version>1.30.0</pitest-maven.version>
+        <jacoco.version>0.8.15</jacoco.version>
+        <license-maven.version>2.7.1</license-maven.version>
+        <central-publishing.version>0.11.0</central-publishing.version>
+        <maven-source.version>3.4.0</maven-source.version>
         <maven-gpg.version>3.2.8</maven-gpg.version>
         <maven-javadoc.version>3.12.0</maven-javadoc.version>
-        <versions-maven.version>2.16.2</versions-maven.version>
-        <maven-enforcer.version>3.4.1</maven-enforcer.version>
-        <maven-release.version>3.1.1</maven-release.version>
+        <versions-maven.version>2.21.0</versions-maven.version>
+        <maven-enforcer.version>3.6.3</maven-enforcer.version>
+        <maven-release.version>3.3.1</maven-release.version>
     </properties>
 
     <dependencyManagement>
@@ -293,6 +293,9 @@
                     <version>${versions-maven.version}</version>
                     <configuration>
                         <allowMajorUpdates>false</allowMajorUpdates>
+                        <ignoredVersions>
+                            <ignoredVersion>(?i).*[-_.]((alpha|beta|rc)([-_.]?[0-9]+)?|m[0-9]+)</ignoredVersion>
+                        </ignoredVersions>
                     </configuration>
                 </plugin>
                 <plugin>
