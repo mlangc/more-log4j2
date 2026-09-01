@@ -24,7 +24,23 @@ Uses Maven Wrapper — prefer `./mvnw` over `mvn`:
 
 # Update license headers
 ./mvnw org.codehaus.mojo:license-maven-plugin:update-file-header
+
+# Check for dependency/plugin updates (all versions live in parent/pom.xml <properties>)
+./mvnw -pl parent versions:display-property-updates      # console summary
+./mvnw -pl parent versions:property-updates-report       # HTML in parent/target/site/
+
+# Apply all available updates to parent/pom.xml, then review with git and run ./mvnw -B package
+./mvnw -pl parent versions:update-properties -DgenerateBackupPoms=false
 ```
+
+The `versions-maven-plugin` config in `parent/pom.xml` deliberately constrains updates:
+`<allowMajorUpdates>false</allowMajorUpdates>` keeps `display-*` / `update-*` off major
+bumps, and an `<ignoredVersions>` regex filters pre-releases (`alpha`/`beta`/`rc`/`Mn`)
+everywhere, including the `-report` goals. Note the `-report` goals still *list* major
+versions in their own column (they ignore `allowMajorUpdates`), and a CLI
+`-DallowMajorUpdates=true` does *not* override the POM config. Pass
+`-DgenerateBackupPoms=false` and rely on git — a stale `pom.xml.versionsBackup` left in the
+tree makes `versions:revert` restore the wrong state.
 
 JaCoCo code coverage runs automatically with `./mvnw test`.
 
