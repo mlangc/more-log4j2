@@ -39,11 +39,13 @@ jobs:
         distribution: 'temurin'
         cache: maven
     - name: Build with Maven
+      env:
+        TEST: ${{ inputs.test }}
       run: |
-        if [ -n "${{ inputs.test }}" ]; then
-          mvn -B -Dtest="${{ inputs.test }}" -Dsurefire.failIfNoSpecifiedTests=false test --file pom.xml
+        if [ -n "$TEST" ]; then
+          ./mvnw -B -Dtest="$TEST" -Dsurefire.failIfNoSpecifiedTests=false test
         else
-          mvn -B package --file pom.xml
+          ./mvnw -B package
         fi
     - name: Test Report
       uses: dorny/test-reporter@v3
