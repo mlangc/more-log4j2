@@ -49,7 +49,7 @@ JaCoCo code coverage runs automatically with `./mvnw test`.
 - **`core/`** — All filters, appenders, and the LogCaptor API
 - **`junit/`** — `AsyncHttpAppenderFlushingTestExecutionListener` for test integration
 - **`parent/`** — Shared POM configuration and dependency versions
-- **`bom/`** — Bill of Materials for consumers using multiple modules
+- **root `pom.xml`** (`more-log4j2-bom`) — Bill of Materials for consumers using multiple modules; also the reactor/aggregator POM
 
 ## Architecture
 
@@ -121,5 +121,6 @@ stub/verify calls in one test cannot interfere with another. Follow the same pat
 
 ## Role of Coding Agents
 
-Please don't change existing files unless explicitly asked. Feel free to add files, or perform temporary changes if that helps
-you to figure things out. For the time being, your role is primarily that of a reviewer.
+Please don't change files in the main working tree unless explicitly asked. To experiment or
+try out changes, create a git worktree and work there freely. For the time being, your role is
+primarily that of a reviewer.
