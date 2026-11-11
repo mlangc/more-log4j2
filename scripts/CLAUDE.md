@@ -1,12 +1,16 @@
 # scripts/
 
-Bash 5+ scripts for development tooling. Run them from the repository root; each supports
-`--help`.
+Bash 5+ scripts for development tooling. Each supports `--help`.
 
-- `find-flaky-tests.sh` — reruns Maven tests in a loop, records per-test results in a TSV
-  file, and prints a flakiness report.
+- `find-flaky-tests.sh` — reruns Maven tests in a loop and prints a flakiness report. Run it
+  from the repository root, or pass `--root DIR`. Per-test results go to
+  `flaky-results-<timestamp>.tsv` in the current directory (gitignored); the Surefire XML
+  reports of failing iterations are copied to `target/find-flaky-tests/failures/<run>/`.
+  `--rerun-failures FILE` reruns only the classes that failed in an earlier results file;
+  `--fail-fast` stops at the first failing iteration.
 - `extract-surefire-failure.sh` — extracts failure messages and captured output from a
-  Surefire XML report (`TEST-*.xml`).
+  Surefire XML report (`TEST-*.xml`), e.g. one of the copies above. Works from any
+  directory.
 
 ## Constraints
 
@@ -21,9 +25,9 @@ Bash 5+ scripts for development tooling. Run them from the repository root; each
 
 ## Tests
 
-Each script has a [bats](https://github.com/bats-core/bats-core) suite in `scripts/tests/`,
-with Surefire XML fixtures under `scripts/tests/fixtures/`. Add or update tests when changing
-a script.
+Each script has a [bats](https://github.com/bats-core/bats-core) suite in `scripts/tests/`
+(bats 1.5.0+, e.g. `brew install bats-core`), with Surefire XML fixtures under
+`scripts/tests/fixtures/`. Add or update tests when changing a script.
 
 ```bash
 bats scripts/tests/                          # all suites
