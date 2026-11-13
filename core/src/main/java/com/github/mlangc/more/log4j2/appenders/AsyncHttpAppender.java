@@ -601,7 +601,11 @@ public class AsyncHttpAppender extends AbstractAppender {
                 .method(method.name(), BodyPublishers.ofByteArray(batch.data));
 
         for (Property property : getPropertyArray()) {
-            requestBuilder.header(property.getName(), property.evaluate(configuration.getStrSubstitutor()));
+            try {
+                requestBuilder.header(property.getName(), property.evaluate(configuration.getStrSubstitutor()));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("`" + property.getName() + "`: Header name or value not valid; potentially sensitive value omitted on purpose");
+            }
         }
 
         if (contentEncoding != ContentEncoding.IDENTITY) {

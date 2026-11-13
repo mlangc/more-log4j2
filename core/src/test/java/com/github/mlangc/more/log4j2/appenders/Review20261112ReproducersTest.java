@@ -211,7 +211,6 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding S1 in " + REVIEW)
     void s1_invalidHeaderValueShouldNotBeLeakedToStatusLogger() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
         var secret = "s3cr3t-token-value\n"; // <-- the trailing newline makes this an invalid header value
@@ -250,7 +249,10 @@ class Review20261112ReproducersTest {
             StatusLogger.getLogger().removeListener(statusListener);
         }
 
-        assertThat(statusMessages).isNotEmpty().noneMatch(m -> m.contains("s3cr3t"));
+        assertThat(statusMessages)
+                .isNotEmpty()
+                .anyMatch(m -> m.contains("Authorization"))
+                .noneMatch(m -> m.contains(secret.substring(0, 6)));
     }
 
     @Test
