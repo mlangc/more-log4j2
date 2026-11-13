@@ -49,7 +49,8 @@ import static org.assertj.core.api.Assertions.fail;
 
 /**
  * Reproducers for the findings in doc/reviews/2026-11-12-review.md. Each test fails against the reviewed
- * commit and is disabled for that reason; remove the {@link Disabled} annotation once the finding is fixed.
+ * commit and stays {@code @Disabled} for as long as its finding is open; the annotation is removed together
+ * with the fix, so that the enabled tests guard against regressions.
  */
 class Review20261112ReproducersTest {
     private static final String REVIEW = "doc/reviews/2026-11-12-review.md";
