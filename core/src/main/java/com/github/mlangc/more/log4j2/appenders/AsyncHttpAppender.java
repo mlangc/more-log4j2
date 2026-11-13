@@ -109,6 +109,8 @@ public class AsyncHttpAppender extends AbstractAppender {
     @GuardedBy("lock")
     private ScheduledFuture<?> scheduledFlush;
     @GuardedBy("lock")
+    private boolean lingerFlushPending;
+    @GuardedBy("lock")
     private long nextBatchId;
     @GuardedBy("lock")
     private final Set<Long> pendingBatchIds = new HashSet<>();
@@ -426,7 +428,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
 
         if (getState().compareTo(State.STOPPING) < 0) {
-            scheduledFlush = executor().schedule(this::flushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
+            scheduledFlush = executor().schedule(this::tryFlushIfLingerElapsed, lingerNs, TimeUnit.NANOSECONDS);
         }
     }
 
@@ -466,17 +468,19 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
     }
 
-    private void flushIfLingerElapsed() {
-        doWithLock(() -> {
-            if (currentBatch.isEmpty()) {
-                return;
-            }
+    private void tryFlushIfLingerElapsed() {
+        doWithLock(this::tryFlushIfLingerElapsedAssumeLocked);
+    }
 
-            long elapsed = ticker.nanoTime() - firstRecordNanos;
-            if (elapsed > Math.round(lingerNs * 0.95)) {
-                tryFlushAssumingLocked();
-            }
-        });
+    private void tryFlushIfLingerElapsedAssumeLocked() {
+        if (currentBatch.isEmpty()) {
+            return;
+        }
+
+        long elapsed = ticker.nanoTime() - firstRecordNanos;
+        if (elapsed > Math.round(lingerNs * 0.95)) {
+            lingerFlushPending = !tryFlushAssumingLocked();
+        }
     }
 
     private boolean tryFlushAssumingLocked() {
@@ -498,6 +502,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             executor().execute(() -> drainBufferedBatches(maxDrainBufferBackoffNs0));
             currentBatch.clear();
             currentBatchBytes = 0;
+            lingerFlushPending = false;
             return true;
         }
 
@@ -521,6 +526,11 @@ public class AsyncHttpAppender extends AbstractAppender {
                 }
 
                 bufferedBatches.removeFirst();
+
+                if (lingerFlushPending) {
+                    tryFlushIfLingerElapsedAssumeLocked();
+                }
+
                 int releaseBytes = oldestBatch.data.length;
                 long batchId = oldestBatch.id;
                 long uncompressedBytes = oldestBatch.uncompressedBytes();
@@ -537,6 +547,10 @@ public class AsyncHttpAppender extends AbstractAppender {
                         pendingBatchIds.remove(batchId);
                         pendingBatchesAwaitingFutures.removeIf(
                                 f -> f.onBatchCompletedAssumingLocked(batchId, throwable));
+
+                        if (lingerFlushPending) {
+                            tryFlushIfLingerElapsedAssumeLocked();
+                        }
 
                         bufferBytesSnapshot = currentBufferBytes;
                         bufferedBatchesSnapshot = bufferedBatches.size();

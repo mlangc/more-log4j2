@@ -81,11 +81,10 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding C1 in " + REVIEW)
     void c1_lingerFlushShouldBeRetriedAfterBufferDrains() throws InterruptedException {
-        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1500)));
+        var lingerMs = 20;
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(8 * lingerMs)));
 
-        var lingerMs = 200;
         var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         configBuilder = configBuilder
                 .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
@@ -105,14 +104,14 @@ class Review20261112ReproducersTest {
 
             log.info("a1");
             log.info("a2");
-            log.info("b1"); // <-- flushes batch A, which is sent immediately and stays in flight for 1.5s
-            Thread.sleep(50); // <-- let the drain task pick up batch A
+            log.info("b1"); // <-- flushes batch A, which is sent immediately and stays in flight for 8 * lingerMs millis
+            Thread.sleep(lingerMs * 2); // <-- the linger timer flushes "b1" as batch B, which stays buffered, since A occupies the only request slot
             log.info("b2");
-            log.info("c1"); // <-- flushes batch B, which stays buffered, since A occupies the only request slot
+            log.info("c1");
 
-            // "c1" now lingers in the current batch. The linger timer fires while the buffer is still full.
-            // Batch A completes after ~1.5s, batch B after ~3s; "c1" should follow shortly after.
-            Awaitility.await().atMost(40 * lingerMs, TimeUnit.MILLISECONDS)
+            // "b2" and "c1" now linger in the current batch. The linger timer fires while B still occupies the only buffer slot.
+            // Batch A completes after ~8 * lingerMs; the lingering batch should be flushed as soon as B is sent and frees its slot.
+            Awaitility.await().atMost(100 * lingerMs, TimeUnit.MILLISECONDS)
                     .untilAsserted(() -> assertThat(listener.deliveredLogEvents()).isEqualTo(5));
         }
     }
