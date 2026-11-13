@@ -36,7 +36,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -171,10 +171,8 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding C3 in " + REVIEW)
-    void c3_bufferedBatchShouldBeSentAsSoonAsRequestSlotIsFree() {
-        var delayMs = 3000;
-        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(delayMs)));
+    void c3_bufferedBatchShouldBeSentAsSoonAsRequestSlotIsFree() throws Exception {
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
 
         var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
         configBuilder = configBuilder
@@ -182,31 +180,52 @@ class Review20261112ReproducersTest {
                         .addAttribute("url", wireMockHttpUrl)
                         .addAttribute("maxBatchLogEvents", 1)
                         .addAttribute("maxConcurrentRequests", 1)
-                        .addAttribute("shutdownTimeoutMs", 60_000)
+                        .addAttribute("maxBatchBufferBatches", 1000)
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
 
         try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
             var appender = TestHelpers.findAppender(context, AsyncHttpAppender.class);
             var log = context.getLogger(getClass());
-            log.info("a");
-            log.info("b");
-            log.info("c");
-            appender.forceFlushAndAwaitTillPushed();
 
-            Awaitility.await().atMost(40, TimeUnit.SECONDS).pollInterval(100, TimeUnit.MILLISECONDS)
-                    .until(() -> serveEventsForCurrentTest().size() == 3 && appender.forceFlushAndAwaitTillPushed().isDone());
+            // Implementation note: A batch that waits in the buffer for a busy request slot should be sent as soon as
+            // the slot is free. This can only be observed as the absence of a delay, so the test compares a burst of
+            // events, where all batches but the first are buffered, to the same number of events sent one at a time,
+            // where nothing is ever buffered. Using a ratio makes the test independent of the speed of the machine.
+            // Noise can only make the burst look slower, so one attempt below the limit is enough; attempt 0 is a
+            // discarded warm-up round. With the polling drain that was in place before C3 was fixed, the ratio was
+            // in the range of 1.3 to 1.9, as opposed to roughly 1.0 without polling.
+            var numEvents = 30;
+            var maxAttempts = 3;
+            var maxRatio = 1.2;
+            var ratios = new ArrayList<Double>();
 
-            var requestMillis = serveEventsForCurrentTest().stream()
-                    .map(e -> e.getRequest().getLoggedDate().getTime())
-                    .sorted(Comparator.naturalOrder())
-                    .toList();
+            for (int attempt = 0; attempt <= maxAttempts; attempt++) {
+                long t0 = System.nanoTime();
+                for (int i = 0; i < numEvents; i++) {
+                    log.info("serial");
+                    appender.forceFlushAndAwaitTillPushed().get(10, TimeUnit.SECONDS);
+                }
 
-            // Requests are served one at a time, so anything beyond `delayMs` between two requests is time during which
-            // a batch was waiting in the buffer although a request slot was free.
-            var maxIdleMs = 250;
-            assertThat(requestMillis.get(1) - requestMillis.get(0) - delayMs).as("idle ms before 2nd request").isLessThan(maxIdleMs);
-            assertThat(requestMillis.get(2) - requestMillis.get(1) - delayMs).as("idle ms before 3rd request").isLessThan(maxIdleMs);
+                long t1 = System.nanoTime();
+                for (int i = 0; i < numEvents; i++) {
+                    log.info("burst");
+                }
+                appender.forceFlushAndAwaitTillPushed().get(10, TimeUnit.SECONDS);
+                long t2 = System.nanoTime();
+
+                if (attempt == 0) {
+                    continue;
+                }
+
+                var ratio = (double) (t2 - t1) / (t1 - t0);
+                ratios.add(ratio);
+                if (ratio < maxRatio) {
+                    break;
+                }
+            }
+
+            assertThat(ratios).as("burst/serial duration ratios").anyMatch(ratio -> ratio < maxRatio);
         }
     }
 

@@ -67,8 +67,6 @@ public class AsyncHttpAppender extends AbstractAppender {
     private final URI url;
     private final int maxBatchBytes;
     private final long lingerNs;
-    private final long maxDrainBufferBackoffNs0;
-    private final long maxDrainBufferBackoffNs1;
     private final int maxConcurrentRequests;
     private final int maxBatchLogEvents;
     private final int maxBatchBufferBytes;
@@ -206,11 +204,6 @@ public class AsyncHttpAppender extends AbstractAppender {
         this.maxBatchBufferBytes = maxBatchBufferBytes;
         this.lingerNs = TimeUnit.MILLISECONDS.toNanos(lingerMs);
 
-        this.maxDrainBufferBackoffNs0 = Math.max(
-                1, min(TimeUnit.MILLISECONDS.toNanos(5), lingerNs / 20, TimeUnit.MILLISECONDS.toNanos(shutdownTimeoutMs) / 20));
-
-        this.maxDrainBufferBackoffNs1 = Math.max(maxDrainBufferBackoffNs0, TimeUnit.SECONDS.toNanos(5));
-
         this.maxConcurrentRequests = maxConcurrentRequests;
         this.allowedInFlight = new Semaphore(maxConcurrentRequests);
         this.maxBatchLogEvents = maxBatchLogEvents;
@@ -248,10 +241,6 @@ public class AsyncHttpAppender extends AbstractAppender {
         } else {
             lockCondition = null;
         }
-    }
-
-    private static long min(long a, long b, long c) {
-        return Math.min(Math.min(a, b), c);
     }
 
     @Override
@@ -499,7 +488,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             currentBufferBytes += batch.effectiveBytes();
             bufferedBatches.addLast(batch);
             pendingBatchIds.add(batch.id);
-            executor().execute(() -> drainBufferedBatches(maxDrainBufferBackoffNs0));
+            executor().execute(this::drainBufferedBatches);
             currentBatch.clear();
             currentBatchBytes = 0;
             lingerFlushPending = false;
@@ -509,7 +498,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return false;
     }
 
-    private void drainBufferedBatches(long maxBackoffNs) {
+    private void drainBufferedBatches() {
         doWithLock(() -> {
             while (true) {
                 var oldestBatch = bufferedBatches.peekFirst();
@@ -518,10 +507,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 }
 
                 if (!allowedInFlight.tryAcquire()) {
-                    var backoffNs = ThreadLocalRandom.current().nextLong(maxBackoffNs + 1);
-                    var newMaxBackoffNs = Math.min(maxDrainBufferBackoffNs1, maxBackoffNs * 2);
-                    executor().schedule(() -> drainBufferedBatches(newMaxBackoffNs), backoffNs, TimeUnit.NANOSECONDS);
-                    getStatusLogger().debug("Too many request in flight; retrying in {}ns", backoffNs);
+                    getStatusLogger().debug("Too many request in flight; waiting for next request to complete");
                     break;
                 }
 
@@ -538,6 +524,9 @@ public class AsyncHttpAppender extends AbstractAppender {
 
                 retryManager.run(() -> sendBatch(oldestBatch)).whenComplete((response, throwable) -> {
                     allowedInFlight.release();
+
+                    // Note: Called asynchronously to avoid recursions if `sendBatch` fails synchronously
+                    executor().execute(this::drainBufferedBatches);
 
                     long bufferBytesSnapshot;
                     int bufferedBatchesSnapshot;
