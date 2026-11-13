@@ -35,6 +35,7 @@ import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -44,6 +45,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.ok;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 /**
  * Reproducers for the findings in doc/reviews/2026-11-12-review.md. Each test fails against the reviewed
@@ -117,11 +119,55 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding C2 in " + REVIEW)
     void c2_typesExposedToBatchCompletionListenersShouldBePublic() {
-        // BatchDeliveredSuccess & BatchDeliveredError are public records with an `HttpStatus` component. Listeners
-        // outside this package cannot call `httpStatus().code()` unless `HttpStatus` is public as well.
-        assertThat(Modifier.isPublic(HttpStatus.class.getModifiers())).isTrue();
+        assertAllRecordPropertiesArePublic("BatchCompletionEvent", AsyncHttpAppender.BatchCompletionEvent.class);
+    }
+
+    private static void assertAllRecordPropertiesArePublic(String path, Class<?> clazz) {
+        assertPublic(path, clazz);
+
+        var recordComponents = clazz.getRecordComponents();
+        if (recordComponents == null) {
+            return;
+        } else if (path.length() > 5_000) {
+            fail("Bailing out of probably infinite recursion; please extend to handle self-referrals");
+        }
+
+        for (var recordComponent : recordComponents) {
+            if (recordComponent.getGenericType() instanceof ParameterizedType) {
+                fail("Parameterized types are not yet supported; please extend this test routine");
+            }
+
+            var componentClazz = recordComponent.getType();
+            var newPath = path + "#" + recordComponent.getName();
+            assertPublic(newPath, componentClazz);
+
+            if (componentClazz.isRecord()) {
+                assertAllRecordPropertiesArePublic(newPath, componentClazz);
+            } else if (componentClazz.isArray()) {
+                fail("Arrays are not yet supported; please extend this test routine");
+            } else {
+                var permittedSubclasses = componentClazz.getPermittedSubclasses();
+                if (permittedSubclasses != null) {
+                    for (var permittedSubclass : permittedSubclasses) {
+                        if (permittedSubclass.getPermittedSubclasses() != null) {
+                            fail("Nested sealed hierarchies are not yet supported; please extend this test routine");
+                        }
+
+                        var newPathAnnotated = newPath + ":" + permittedSubclass.getSimpleName();
+                        assertAllRecordPropertiesArePublic(newPathAnnotated, permittedSubclass);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void assertPublic(String path, Class<?> clazz) {
+        for (var enclosingClazz = clazz; enclosingClazz != null; enclosingClazz = enclosingClazz.getEnclosingClass()) {
+            assertThat(Modifier.isPublic(enclosingClazz.getModifiers()))
+                    .as("path=%s, clazz=%s", path, enclosingClazz.getSimpleName())
+                    .isTrue();
+        }
     }
 
     @Test

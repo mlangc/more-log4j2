@@ -19,4 +19,4 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
-record HttpStatus(int code, String message) { }
+public record HttpStatus(int code, String message) { }
