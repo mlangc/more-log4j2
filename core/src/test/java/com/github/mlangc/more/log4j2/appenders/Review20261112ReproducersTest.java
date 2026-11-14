@@ -34,8 +34,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -296,6 +301,49 @@ class Review20261112ReproducersTest {
         assertThat(listener.events).singleElement().satisfies(evt ->
                 assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, success ->
                         assertThat(success.httpStatus().message().length()).isLessThan(100_000)));
+    }
+
+    @Test
+    @Disabled("Reproducer for finding C4 in " + REVIEW)
+    void c4_readTimeoutShouldCoverResponseBody() throws Exception {
+        var readTimeoutMs = 200;
+
+        try (var serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            // Note: The server sends the response headers immediately, but never sends the body.
+            var server = new Thread(() -> {
+                try (var socket = serverSocket.accept()) {
+                    socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                    socket.getOutputStream().flush();
+                    socket.getInputStream().transferTo(OutputStream.nullOutputStream()); // <-- returns when the client closes the connection
+                } catch (IOException ignore) {
+                    // Nothing to do: the test is over.
+                }
+            });
+
+            server.setDaemon(true);
+            server.start();
+
+            var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+            configBuilder = configBuilder
+                    .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                            .addAttribute("url", "http://localhost:" + serverSocket.getLocalPort() + "/c4")
+                            .addAttribute("lingerMs", 1)
+                            .addAttribute("readTimeoutMs", readTimeoutMs)
+                            .addAttribute("retries", 0)
+                            .addAttribute("shutdownTimeoutMs", 1)
+                            .addAttribute("batchCompletionListener", RecordingListener.class.getName())
+                            .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                    .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+            try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+                var listener = (RecordingListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+                context.getLogger(getClass()).info("x");
+
+                Awaitility.await().atMost(10 * readTimeoutMs, TimeUnit.MILLISECONDS).untilAsserted(() ->
+                        assertThat(listener.events).singleElement().satisfies(evt ->
+                                assertThat(evt.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveryFailed.class)));
+            }
+        }
     }
 
     @Test
