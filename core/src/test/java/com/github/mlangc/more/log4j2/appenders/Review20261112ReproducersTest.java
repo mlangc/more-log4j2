@@ -40,11 +40,14 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.ok;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -304,24 +307,48 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding C4 in " + REVIEW)
     void c4_readTimeoutShouldCoverResponseBody() throws Exception {
         var readTimeoutMs = 200;
+        var retries = 1;
+        var expectedConnections = retries + 1;
 
-        try (var serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+        var connectionsAccepted = new AtomicInteger();
+        var connectionsClosedByClient = new AtomicInteger();
+
+        try (var serverSocket = new ServerSocket(0, expectedConnections, InetAddress.getLoopbackAddress())) {
             // Note: The server sends the response headers immediately, but never sends the body.
-            var server = new Thread(() -> {
-                try (var socket = serverSocket.accept()) {
+            Consumer<Socket> stallAfterHeaders = socket -> {
+                try (socket) {
                     socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
                     socket.getOutputStream().flush();
-                    socket.getInputStream().transferTo(OutputStream.nullOutputStream()); // <-- returns when the client closes the connection
+
+                    try {
+                        socket.getInputStream().transferTo(OutputStream.nullOutputStream()); // <-- returns or throws when the client closes the connection
+                    } finally {
+                        connectionsClosedByClient.incrementAndGet();
+                    }
+                } catch (IOException ignore) {
+                    // Nothing to do: the connection is gone.
+                }
+            };
+
+            var acceptor = new Thread(() -> {
+                try {
+                    while (true) {
+                        var socket = serverSocket.accept();
+                        connectionsAccepted.incrementAndGet();
+
+                        var connectionHandler = new Thread(() -> stallAfterHeaders.accept(socket));
+                        connectionHandler.setDaemon(true);
+                        connectionHandler.start();
+                    }
                 } catch (IOException ignore) {
                     // Nothing to do: the test is over.
                 }
             });
 
-            server.setDaemon(true);
-            server.start();
+            acceptor.setDaemon(true);
+            acceptor.start();
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -329,7 +356,8 @@ class Review20261112ReproducersTest {
                             .addAttribute("url", "http://localhost:" + serverSocket.getLocalPort() + "/c4")
                             .addAttribute("lingerMs", 1)
                             .addAttribute("readTimeoutMs", readTimeoutMs)
-                            .addAttribute("retries", 0)
+                            .addAttribute("retries", retries)
+                            .addAttribute("maxBackoffMs", 1)
                             .addAttribute("shutdownTimeoutMs", 1)
                             .addAttribute("batchCompletionListener", RecordingListener.class.getName())
                             .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
@@ -339,9 +367,16 @@ class Review20261112ReproducersTest {
                 var listener = (RecordingListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
                 context.getLogger(getClass()).info("x");
 
-                Awaitility.await().atMost(10 * readTimeoutMs, TimeUnit.MILLISECONDS).untilAsserted(() ->
-                        assertThat(listener.events).singleElement().satisfies(evt ->
-                                assertThat(evt.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveryFailed.class)));
+                Awaitility.await().atMost(10L * expectedConnections * readTimeoutMs, TimeUnit.MILLISECONDS).untilAsserted(() -> {
+                    assertThat(listener.events).singleElement().satisfies(evt -> {
+                        assertThat(evt.type()).isInstanceOf(AsyncHttpAppender.BatchDeliveryFailed.class);
+                        assertThat(evt.stats().tries()).isEqualTo(expectedConnections);
+                    });
+
+                    // Note: A request that timed out must not leave its connection behind.
+                    assertThat(connectionsAccepted).hasValue(expectedConnections);
+                    assertThat(connectionsClosedByClient).hasValue(expectedConnections);
+                });
             }
         }
     }

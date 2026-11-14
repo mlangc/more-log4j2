@@ -47,6 +47,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
@@ -601,8 +602,31 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
 
         var maxResponseBodyBytes = 25_000;
-        return httpClientManager.httpClient.sendAsync(requestBuilder.build(), HttpHelpers.lengthLimitedStringBodyHandler(maxResponseBodyBytes))
-                .thenApply((response -> new HttpStatus(response.statusCode(), response.body())));
+        var sendOp = httpClientManager.httpClient.sendAsync(requestBuilder.build(), HttpHelpers.lengthLimitedStringBodyHandler(maxResponseBodyBytes));
+        var result = sendOp.thenApply((response -> new HttpStatus(response.statusCode(), response.body())));
+
+        if (Runtime.version().feature() < 26) {
+            // Up to and including JDK 25, HttpRequest.Builder.timeout only covers the time until the response headers
+            // are received (see https://bugs.openjdk.org/browse/JDK-8208693). A server that stalls or sends the body
+            // very slowly could therefore keep a request open indefinitely, so we add a deadline of our own.
+            //
+            // Note that orTimeout is deliberately applied to `result` and not to `sendOp`: it completes the future it
+            // is called on, and cancelling an already completed `sendOp` would not abort the request, leaving its
+            // connection open.
+            return result.orTimeout(httpClientManager.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                    .exceptionallyComposeAsync(e -> {
+                        if (e instanceof TimeoutException) {
+                            sendOp.cancel(true);
+
+                            // Replaces the TimeoutException from orTimeout, since only IOExceptions are eligible for retries
+                            return CompletableFuture.failedFuture(new HttpTimeoutException("Request timed out"));
+                        }
+
+                        return CompletableFuture.failedFuture(e);
+                    }, executor());
+        }
+
+        return result;
     }
 
     private record HttpClientManagerData(Duration connectTimeout, Duration readTimeout, String httpClientSslConfigSupplier) {
