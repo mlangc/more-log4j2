@@ -47,7 +47,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
@@ -601,7 +600,8 @@ public class AsyncHttpAppender extends AbstractAppender {
             requestBuilder.header("Content-Encoding", contentEncoding.name().toLowerCase(Locale.ROOT));
         }
 
-        return httpClientManager.httpClient.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
+        var maxResponseBodyBytes = 25_000;
+        return httpClientManager.httpClient.sendAsync(requestBuilder.build(), HttpHelpers.lengthLimitedStringBodyHandler(maxResponseBodyBytes))
                 .thenApply((response -> new HttpStatus(response.statusCode(), response.body())));
     }
 

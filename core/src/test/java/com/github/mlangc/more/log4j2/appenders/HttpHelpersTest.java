@@ -19,10 +19,19 @@
  */
 package com.github.mlangc.more.log4j2.appenders;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Flow;
+import java.util.function.Function;
 
 import static com.github.mlangc.more.log4j2.appenders.HttpHelpers.parseHttpStatusCodes;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,5 +69,55 @@ class HttpHelpersTest {
         } else {
             assertThatIllegalArgumentException().isThrownBy(() -> parseHttpStatusCodes(testCase.input));
         }
+    }
+
+    @Test
+    void lengthLimitedStringBodyHandlerShouldWorkWhenOnNextIsCalledMultipleTimesWithMultipleBuffers()  {
+        var maxBytes = 26;
+        var bodySubscriber = HttpHelpers.lengthLimitedStringBodyHandler(maxBytes).apply(new HttpResponse.ResponseInfo() {
+            @Override
+            public int statusCode() {
+                return 200;
+            }
+
+            @Override
+            public HttpHeaders headers() {
+                return HttpHeaders.of(Map.of(), (ignore1, ignore2) -> true);
+            }
+
+            @Override
+            public HttpClient.Version version() {
+                return HttpClient.Version.HTTP_1_1;
+            }
+        });
+
+        var subscription = new Flow.Subscription() {
+            boolean cancelled;
+
+            @Override
+            public void request(long n) {
+
+            }
+
+            @Override
+            public void cancel() {
+                cancelled = true;
+            }
+        };
+
+        bodySubscriber.onSubscribe(subscription);
+        assertThat(subscription.cancelled).isFalse();
+
+        Function<String, ByteBuffer> newBuffer = s -> ByteBuffer.wrap(s.getBytes(StandardCharsets.UTF_8));
+
+        bodySubscriber.onNext(List.of(newBuffer.apply("ab"), newBuffer.apply("cdefghijklmno")));
+
+        assertThat(subscription.cancelled).isFalse();
+        bodySubscriber.onNext(List.of(newBuffer.apply("pqrstuvw"), newBuffer.apply("xyz####"), newBuffer.apply("#")));
+        assertThat(subscription.cancelled).isFalse();
+
+        bodySubscriber.onComplete();
+
+        assertThat(bodySubscriber.getBody()).isCompletedWithValue("abcdefghijklmnopqrstuvwxyz");
     }
 }

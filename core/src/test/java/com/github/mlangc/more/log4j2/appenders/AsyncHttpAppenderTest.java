@@ -57,6 +57,7 @@ import org.awaitility.Awaitility;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -69,6 +70,7 @@ import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.net.Socket;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
@@ -1794,6 +1796,74 @@ class AsyncHttpAppenderTest {
         var totalBackoffNanosForMaxBackoffMs0 = totalBackoffNanosForBackoffMs.applyAsLong(1);
         var totalBackoffNanosForMaxBackoffMs1 = totalBackoffNanosForBackoffMs.applyAsLong(20);
         assertThat(totalBackoffNanosForMaxBackoffMs0).isLessThan(totalBackoffNanosForMaxBackoffMs1);
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            "ISO-8859-1, 0, 0, false",
+            "ISO-8859-1, 0, 1, true",
+            "ISO-8859-1, 1, 1, false",
+            "ISO-8859-1, 2, 0, true",
+            "utf-8, 0, 3, false",
+            "UTF-16, 3, 1, false",
+            "utf-16le, 3, 3, true"})
+    void shouldHonorResponseCharsets(String charsetName, int numLeadingSpaces, int numTrailingSpaces, boolean insertQuotes) {
+        var bodyMessage = "Liebe Grüße aus Österreich";
+        var leadingSpaces = " ".repeat(numLeadingSpaces);
+        var trailingSpaces = " ".repeat(numTrailingSpaces);
+        var quote = insertQuotes ? "\"" : "";
+
+        wireMockExt.stubFor(post(wireMockPath).willReturn(
+                aResponse()
+                        .withHeader("Content-Type", "text/plain;" + leadingSpaces + "chArset=" + quote + charsetName + quote + trailingSpaces)
+                        .withBody(bodyMessage.getBytes(Charset.forName(charsetName)))));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        TestBatchCompletionListener completionListener;
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            completionListener = (TestBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+            context.getLogger(getClass()).info("test");
+        }
+
+        assertThat(completionListener.getLastBatchCompletionEvents())
+                .map(AsyncHttpAppender.BatchCompletionEvent::type)
+                .containsExactly(new AsyncHttpAppender.BatchDeliveredSuccess(new HttpStatus(200, bodyMessage)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { " charset=;;;", "", " charset=???", "noset=utf8", "charset==utf99", " charset=", "charset=utf-999"})
+    void shouldIgnoreBrokenCharsetHeaders(String brokenSpec) {
+        var bodyMessage = "Liebe Grüße aus Österreich";
+
+        wireMockExt.stubFor(post(wireMockPath).willReturn(
+                aResponse()
+                        .withHeader("Content-type", "text/plain; " + brokenSpec)
+                        .withBody(bodyMessage.getBytes(StandardCharsets.UTF_8))));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("batchCompletionListener", TestBatchCompletionListener.class.getName())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        TestBatchCompletionListener completionListener;
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            completionListener = (TestBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+            context.getLogger(getClass()).info("test");
+        }
+
+        assertThat(completionListener.getLastBatchCompletionEvents())
+                .map(AsyncHttpAppender.BatchCompletionEvent::type)
+                .containsExactly(new AsyncHttpAppender.BatchDeliveredSuccess(new HttpStatus(200, bodyMessage)));
     }
 
     @Test

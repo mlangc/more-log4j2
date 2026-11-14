@@ -276,7 +276,6 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding S2 in " + REVIEW)
     void s2_hugeResponseBodyShouldNotBeRetained() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withBody("X".repeat(5_000_000))));
 
