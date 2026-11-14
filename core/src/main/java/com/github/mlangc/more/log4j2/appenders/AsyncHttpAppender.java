@@ -97,7 +97,7 @@ public class AsyncHttpAppender extends AbstractAppender {
     @GuardedBy("lock")
     private final List<byte[]> currentBatch = new ArrayList<>();
     @GuardedBy("lock")
-    private long currentBatchBytes;
+    private int currentBatchBytes;
     @GuardedBy("lock")
     private final Deque<Batch> bufferedBatches;
     @GuardedBy("lock")
@@ -361,7 +361,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
 
             if (!overflow) {
-                if (currentBatchBytes == 0) {
+                if (currentBatch.isEmpty()) {
                     currentBatchBytes += batchPrefix.length;
                 } else if (needSeparatorAssumeLocked(eventBytes)) {
                     currentBatchBytes += batchSeparator.length;
@@ -376,7 +376,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                         remainingNanos = lockCondition.awaitNanos(remainingNanos);
 
                         if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
-                            if (currentBatchBytes == 0) {
+                            if (currentBatch.isEmpty()) {
                                 currentBatchBytes += batchPrefix.length;
                             } else if (needSeparatorAssumeLocked(eventBytes)) {
                                 currentBatchBytes += batchSeparator.length;
@@ -428,24 +428,16 @@ public class AsyncHttpAppender extends AbstractAppender {
             return true;
         } else {
             var separatorLen = needSeparatorAssumeLocked(eventBytes) ? batchSeparator.length : 0;
-            return currentBatchBytes + separatorLen + batchSuffix.length + eventBytes.length > maxBatchBytes;
+            return (long) currentBatchBytes + separatorLen + batchSuffix.length + eventBytes.length > maxBatchBytes;
         }
     }
 
     private boolean needSeparatorAssumeLocked(byte[] nextEventBytes) {
-        if (currentBatchBytes == 0) {
+        if (currentBatch.isEmpty()) {
             return false;
         }
 
-        if (batchSeparatorInsertionStrategy == BatchSeparatorInsertionStrategy.ALWAYS) {
-            return true;
-        }
-
-        if (endsWith(currentBatch.get(currentBatch.size() - 1), batchSeparator)) {
-            return false;
-        }
-
-        return !startsWith(nextEventBytes, batchSeparator);
+        return isSeparatorNeeded(currentBatch.get(currentBatch.size() - 1), nextEventBytes);
     }
 
     private void doWithLock(Runnable op) {
@@ -477,7 +469,7 @@ public class AsyncHttpAppender extends AbstractAppender {
             return true;
         }
 
-        var batchSize = calculateBatchSize(currentBatch);
+        var batchSize = currentBatchBytes + batchSuffix.length;
 
         // Implementation note: The effective batch size might be smaller, or even bigger in exceptional cases if compression is enabled.
         // However, since creating batches just to throw them away seems wasteful, especially in an overload situation, this inaccuracy seems the lesser evil.
@@ -886,23 +878,6 @@ public class AsyncHttpAppender extends AbstractAppender {
 
     public BatchCompletionListener batchCompletionListener() {
         return batchCompletionListener;
-    }
-
-    private int calculateBatchSize(List<byte[]> events) {
-        assert !currentBatch.isEmpty();
-
-        int batchSize = batchPrefix.length + batchSuffix.length;
-        batchSize += events.get(0).length;
-
-        for (int i = 1; i < events.size(); i++) {
-            if (isSeparatorNeeded(events.get(i - 1), events.get(i))) {
-                batchSize += batchSeparator.length;
-            }
-
-            batchSize += events.get(i).length;
-        }
-
-        return batchSize;
     }
 
     private Batch createBatchAssumingLocked(List<byte[]> events, int batchSize) {

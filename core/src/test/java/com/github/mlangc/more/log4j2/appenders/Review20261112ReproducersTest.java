@@ -21,7 +21,6 @@ package com.github.mlangc.more.log4j2.appenders;
 
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
-import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
 import org.apache.logging.log4j.status.StatusData;
@@ -29,10 +28,11 @@ import org.apache.logging.log4j.status.StatusListener;
 import org.apache.logging.log4j.status.StatusLogger;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -49,8 +49,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.ok;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -61,8 +64,6 @@ import static org.assertj.core.api.Assertions.fail;
  * with the fix, so that the enabled tests guard against regressions.
  */
 class Review20261112ReproducersTest {
-    private static final String REVIEW = "doc/reviews/2026-11-12-review.md";
-
     @RegisterExtension
     static WireMockExtension wireMockExt = WireMockExtension.newInstance()
             .options(wireMockConfig().dynamicPort())
@@ -382,7 +383,6 @@ class Review20261112ReproducersTest {
     }
 
     @Test
-    @Disabled("Reproducer for finding R1 in " + REVIEW)
     void r1_emptyFirstEventShouldNotBreakBatchSizeAccounting() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
 
@@ -409,9 +409,30 @@ class Review20261112ReproducersTest {
                 assertThat(evt.stats().batchBytesUncompressed()).isLessThanOrEqualTo(maxBatchBytes));
     }
 
-    private List<ServeEvent> serveEventsForCurrentTest() {
-        return wireMockExt.getAllServeEvents().stream()
-                .filter(e -> e.getRequest().getUrl().equals(wireMockPath))
-                .toList();
+    @ParameterizedTest
+    @ValueSource(strings = {"always", "if_missing"})
+    void r1_emptyFirstEventShouldBeDeliveredInSameBatchAsNextEvent(String batchSeparatorInsertionStrategy) {
+        // Note: Not a reproducer for the original finding, but for a regression that an intermediate fix introduced:
+        // the separator after an empty first event was not accounted for, and the batch could not be created anymore.
+        var path = wireMockPath + "/" + batchSeparatorInsertionStrategy;
+        wireMockExt.stubFor(post(path).willReturn(ok()));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl + "/" + batchSeparatorInsertionStrategy)
+                        .addAttribute("batchSeparator", ",")
+                        .addAttribute("batchSeparatorInsertionStrategy", batchSeparatorInsertionStrategy)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var log = context.getLogger(getClass());
+            log.info(""); // <-- serialized to zero bytes
+            log.info("abc"); // <-- fits into the same batch, with a separator in front
+        }
+
+        wireMockExt.verify(1, postRequestedFor(urlEqualTo(path)));
+        wireMockExt.verify(1, postRequestedFor(urlEqualTo(path)).withRequestBody(equalTo(",abc")));
     }
 }
