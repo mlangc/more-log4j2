@@ -30,12 +30,19 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [ '17', '21', '25', '27' ]
+
+    name: build (JDK ${{ matrix.java-version }})
+
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - name: Set up JDK 17
+    - name: Set up JDK ${{ matrix.java-version }}
       uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
       with:
-        java-version: '17'
+        java-version: ${{ matrix.java-version }}
         distribution: 'temurin'
         cache: maven
     - name: Build with Maven
@@ -51,6 +58,6 @@ jobs:
       uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
       if: ${{ !cancelled() }}
       with:
-        name: JUnit Tests
+        name: JUnit Tests (JDK ${{ matrix.java-version }})
         path: '**/target/surefire-reports/TEST-*.xml'
         reporter: java-junit
