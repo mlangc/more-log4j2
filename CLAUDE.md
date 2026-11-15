@@ -119,6 +119,13 @@ Appenders extend `AbstractAppender`. Filters do *not* uniformly extend `Abstract
   etc., as used by `AsyncHttpAppender` — are equally fine; don't "normalise" one style into
   the other.
 
+### Error handling
+
+- **Catch `Exception`, never `Throwable` or `Error`.** After an `Error` such as
+  `OutOfMemoryError` there is no reliable way to restore a clean state, so the code does not
+  try, not even for cleanup. Do not flag `catch (Exception e)` as too narrow in reviews.
+  `CompletableFuture` callbacks are the unavoidable exception: they receive every `Throwable`.
+
 ### AsyncHttpAppender
 
 Invariants to be aware of when reading or reviewing the code:
