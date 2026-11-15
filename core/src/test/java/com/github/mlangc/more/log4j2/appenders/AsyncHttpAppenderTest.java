@@ -80,6 +80,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -1701,7 +1702,7 @@ class AsyncHttpAppenderTest {
     }
 
     @Test
-    void appendShouldInterruptThreadAfterCatchingInterruptedException() throws InterruptedException {
+    void appendShouldInterruptThreadAfterCatchingInterruptedException() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(50)));
 
         var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
@@ -1711,7 +1712,7 @@ class AsyncHttpAppenderTest {
                         .addAttribute("url", wireMockHttpUrl)
                         .addAttribute("maxBatchLogEvents", 1)
                         .addAttribute("maxBatchBufferBatches", 1)
-                        .addAttribute("maxBlockOnOverflowMs", 50)
+                        .addAttribute("maxBlockOnOverflowMs", -1)
                         .addAttribute("shutdownTimeoutMs", 50)
                         .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg"))
                         .addComponent(configBuilder.newComponent("OverflowAppenderRef").addAttribute("ref", "Count")))
@@ -1720,21 +1721,30 @@ class AsyncHttpAppenderTest {
         try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
             var log = context.getLogger(getClass());
 
+            AtomicBoolean stop = new AtomicBoolean(false);
             Runnable logTillInterrupted = () -> {
-                for (int i = 0; i < Integer.MAX_VALUE && !Thread.currentThread().isInterrupted(); i++) {
+                for (int i = 0; i < Integer.MAX_VALUE && !Thread.currentThread().isInterrupted() && !stop.get(); i++) {
                     log.info("waitForInterrupt={}", i);
                 }
-
-                assertThat(Thread.interrupted()).isTrue();
             };
 
             var threadToInterrupt = new Thread(logTillInterrupted, "threadToInterrupt");
             threadToInterrupt.start();
             try {
-                Thread.sleep(50);
+                Awaitility.await()
+                        .pollDelay(10, TimeUnit.MILLISECONDS).atMost(1, TimeUnit.SECONDS)
+                        .untilAsserted(() -> assertThat(threadToInterrupt.getState()).isEqualTo(Thread.State.TIMED_WAITING));
             } finally {
                 threadToInterrupt.interrupt();
-                threadToInterrupt.join(200);
+                try {
+                    Awaitility.await().atMost(1, TimeUnit.SECONDS)
+                            .untilAsserted(() -> {
+                                assertThat(threadToInterrupt.isInterrupted()).isTrue();
+                                assertThat(threadToInterrupt.isAlive()).isFalse();
+                            });
+                } finally {
+                    stop.set(true);
+                }
             }
         }
     }
