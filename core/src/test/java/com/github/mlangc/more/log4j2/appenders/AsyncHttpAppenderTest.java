@@ -1666,6 +1666,79 @@ class AsyncHttpAppenderTest {
         }
     }
 
+    static class ThreadRecordingBatchCompletionListener implements AsyncHttpAppender.BatchCompletionListener {
+        record Invocation(String threadName, AsyncHttpAppender.BatchCompletionEvent event) { }
+
+        final List<Invocation> invocations = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void onBatchCompletionEvent(AsyncHttpAppender.BatchCompletionEvent event) {
+            invocations.add(new Invocation(Thread.currentThread().getName(), event));
+        }
+    }
+
+    enum BatchOutcome {
+        SUCCESS(AsyncHttpAppender.BatchDeliveredSuccess.class),
+        ERROR_STATUS(AsyncHttpAppender.BatchDeliveredError.class),
+        CONNECTION_RESET(AsyncHttpAppender.BatchDeliveryFailed.class),
+        NO_RESPONSE_HEADERS(AsyncHttpAppender.BatchDeliveryFailed.class),
+        STALLED_RESPONSE_BODY(AsyncHttpAppender.BatchDeliveryFailed.class);
+
+        final Class<? extends AsyncHttpAppender.BatchCompletionType> expectedCompletionType;
+
+        BatchOutcome(Class<? extends AsyncHttpAppender.BatchCompletionType> expectedCompletionType) {
+            this.expectedCompletionType = expectedCompletionType;
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BatchOutcome.class)
+    void shouldCallBatchCompletionListenerOnAppenderThread(BatchOutcome outcome) {
+        // Note: Depending on the outcome and the JDK version, the HTTP request completes on different threads (the
+        // common pool, or a JDK internal timer thread). The appender is expected to switch back to its own thread in
+        // all of these cases.
+        //
+        // The read timeout is short only where the test waits for it; elsewhere it is generous, so that a slow first
+        // request cannot turn the expected outcome into a timeout.
+        var readTimeoutMs = switch (outcome) {
+            case NO_RESPONSE_HEADERS, STALLED_RESPONSE_BODY -> 100;
+            case SUCCESS, ERROR_STATUS, CONNECTION_RESET -> 10_000;
+        };
+
+        wireMockExt.stubFor(post(wireMockPath).willReturn(switch (outcome) {
+            case SUCCESS -> ok();
+            case ERROR_STATUS -> serverError();
+            case CONNECTION_RESET -> aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER);
+            case NO_RESPONSE_HEADERS -> ok().withFixedDelay(20 * readTimeoutMs);
+            // The headers arrive immediately, but the body takes far longer than the read timeout
+            case STALLED_RESPONSE_BODY -> ok().withBody("0123456789").withChunkedDribbleDelay(10, 20 * readTimeoutMs);
+        }));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("lingerMs", 1)
+                        .addAttribute("retries", 0)
+                        .addAttribute("readTimeoutMs", readTimeoutMs)
+                        .addAttribute("batchCompletionListener", ThreadRecordingBatchCompletionListener.class.getName())
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var completionListener = (ThreadRecordingBatchCompletionListener) TestHelpers.findAppender(context, AsyncHttpAppender.class).batchCompletionListener();
+
+            context.getLogger(getClass()).info("test");
+
+            Awaitility.await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> assertThat(completionListener.invocations).hasSize(1));
+
+            var invocation = completionListener.invocations.get(0);
+            assertThat(invocation.event().type()).isInstanceOf(outcome.expectedCompletionType);
+            assertThat(invocation.threadName()).contains(AsyncHttpAppender.class.getSimpleName());
+        }
+    }
+
     @Test
     void shouldDropLogsIfOverloadedAndAggressiveBlockMs() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));

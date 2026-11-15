@@ -605,8 +605,8 @@ public class AsyncHttpAppender extends AbstractAppender {
             // Note that orTimeout is deliberately applied to `result` and not to `sendOp`: it completes the future it
             // is called on, and cancelling an already completed `sendOp` would not abort the request, leaving its
             // connection open.
-            return result.orTimeout(httpClientManager.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                    .exceptionallyComposeAsync(e -> {
+            result = result.orTimeout(httpClientManager.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                    .exceptionallyCompose(e -> {
                         if (e instanceof TimeoutException) {
                             sendOp.cancel(true);
 
@@ -615,10 +615,12 @@ public class AsyncHttpAppender extends AbstractAppender {
                         }
 
                         return CompletableFuture.failedFuture(e);
-                    }, executor());
+                    });
         }
 
-        return result;
+        // HttpClient.sendAsync completes on the common pool and orTimeout on a JDK internal thread; neither is
+        // where we want to continue, so we always switch back to our own executor.
+        return result.whenCompleteAsync((r, e) -> { }, executor());
     }
 
     private record HttpClientManagerData(Duration connectTimeout, Duration readTimeout, String httpClientSslConfigSupplier) {
