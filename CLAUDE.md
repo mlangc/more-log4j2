@@ -44,6 +44,15 @@ Use the Maven Wrapper (`./mvnw`), not `mvn`:
 ./mvnw test-compile -pl core -am -q && ./mvnw org.pitest:pitest-maven:mutationCoverage -pl core -am -DtargetClasses='com.github.mlangc.more.log4j2.filters.ThrottlingFilter'
 ```
 
+CI runs the build on JDK 17, 21, 25 and 27. `AsyncHttpAppender.sendBatch` behaves differently
+below JDK 26, so run its tests on both sides of that line. [mise](https://mise.jdx.dev) selects
+the JDK (`mise.toml` pins the default to 17):
+
+```bash
+mise exec java@21 -- ./mvnw -Dtest=AsyncHttpAppenderTest test -pl core -am
+mise exec java@27 -- ./mvnw -Dtest=AsyncHttpAppenderTest test -pl core -am
+```
+
 License headers are added and updated automatically by every build (`update-file-header` is
 bound to `process-sources`), so don't write them by hand. To update them without a full
 build: `./mvnw org.codehaus.mojo:license-maven-plugin:update-file-header`.
@@ -120,7 +129,12 @@ Invariants to be aware of when reading or reviewing the code:
   backoff, and the `HttpClient`'s own executor and callbacks — intentionally runs on a
   single-thread `ScheduledThreadPoolExecutor` owned by `HttpClientManager`. The manager is
   shared between appenders with identical client settings, so nothing that runs on this
-  thread may block.
+  thread may block. This does not happen by itself: `HttpClient.sendAsync` completes its
+  future on the common pool even when the client has its own executor (undocumented JDK
+  behaviour), and `orTimeout` completes on a JDK internal timer thread. `sendBatch` therefore
+  ends with an explicit hop back to the executor; keep that hop last when changing the
+  method. The `BatchCompletionListener` runs on this thread too, and `stop()` only waits for
+  it because of that.
 - **`drainBufferedBatches` runs under the lock**: the method body is wrapped in `doWithLock`,
   but the HTTP calls are submitted as `CompletableFuture`s and complete outside the lock. The
   `whenComplete` callback re-acquires the lock explicitly when it needs to update shared
