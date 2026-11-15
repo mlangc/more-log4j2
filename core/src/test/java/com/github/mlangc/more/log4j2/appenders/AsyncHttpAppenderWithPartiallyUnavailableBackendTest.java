@@ -36,6 +36,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
+@UseAsyncHttpAppender
 class AsyncHttpAppenderWithPartiallyUnavailableBackendTest {
     private WireMockServer wireMockServer;
 

@@ -314,22 +314,33 @@ public class AsyncHttpAppender extends AbstractAppender {
             batchSeparator = "\n";
         }
 
-        return new AsyncHttpAppender(name, url, filter, layout, ignoreExceptions, properties,
-                maxBatchBytes, lingerMs, maxConcurrentRequests, maxBatchLogEvents,
-                HttpClientManager.get(managerData), System::nanoTime, configuration, method,
-                batchPrefix == null ? EMPTY_BYTE_ARRAY : batchPrefix.getBytes(StandardCharsets.UTF_8),
-                batchSeparator.getBytes(StandardCharsets.UTF_8),
-                batchSuffix == null ? EMPTY_BYTE_ARRAY : batchSuffix.getBytes(StandardCharsets.UTF_8),
-                retries, contentEncoding,
-                maxBatchBufferBytes == Integer.MIN_VALUE
-                        ? maxBatchBufferBytesFromMaxBatchBytes(maxBatchBytes, maxBatchBufferBatches)
-                        : maxBatchBufferBytes,
-                HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
-                HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
-                retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
-                shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs,
-                maxBlockOnOverflowMs < 0 ? Integer.MAX_VALUE : maxBlockOnOverflowMs,
-                maxBatchBufferBatches, overflowAppenderRef, maxBackoffMs);
+        HttpClientManager clientManager = HttpClientManager.get(managerData);
+        try {
+            return new AsyncHttpAppender(name, url, filter, layout, ignoreExceptions, properties,
+                    maxBatchBytes, lingerMs, maxConcurrentRequests, maxBatchLogEvents,
+                    clientManager, System::nanoTime, configuration, method,
+                    batchPrefix == null ? EMPTY_BYTE_ARRAY : batchPrefix.getBytes(StandardCharsets.UTF_8),
+                    batchSeparator.getBytes(StandardCharsets.UTF_8),
+                    batchSuffix == null ? EMPTY_BYTE_ARRAY : batchSuffix.getBytes(StandardCharsets.UTF_8),
+                    retries, contentEncoding,
+                    maxBatchBufferBytes == Integer.MIN_VALUE
+                            ? maxBatchBufferBytesFromMaxBatchBytes(maxBatchBytes, maxBatchBufferBatches)
+                            : maxBatchBufferBytes,
+                    HttpHelpers.parseHttpStatusCodes(httpSuccessCodes),
+                    HttpHelpers.parseHttpStatusCodes(httpRetryCodes),
+                    retryOnIoError, batchSeparatorInsertionStrategy, batchCompletionListener,
+                    shutdownTimeoutMs < 0 ? Integer.MAX_VALUE : shutdownTimeoutMs,
+                    maxBlockOnOverflowMs < 0 ? Integer.MAX_VALUE : maxBlockOnOverflowMs,
+                    maxBatchBufferBatches, overflowAppenderRef, maxBackoffMs);
+        } catch (Exception e) {
+            try {
+                clientManager.close();
+            } catch (Exception ex) {
+                e.addSuppressed(ex);
+            }
+
+            throw e;
+        }
     }
 
     private static int maxBatchBufferBytesFromMaxBatchBytes(long maxBatchBytes, int maxBatchBufferBatches) {

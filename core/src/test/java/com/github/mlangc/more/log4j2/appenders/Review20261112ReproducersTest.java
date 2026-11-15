@@ -49,11 +49,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.ok;
-import static com.github.tomakehurst.wiremock.client.WireMock.post;
-import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -63,6 +59,7 @@ import static org.assertj.core.api.Assertions.fail;
  * commit and stays {@code @Disabled} for as long as its finding is open; the annotation is removed together
  * with the fix, so that the enabled tests guard against regressions.
  */
+@UseAsyncHttpAppender
 class Review20261112ReproducersTest {
     @RegisterExtension
     static WireMockExtension wireMockExt = WireMockExtension.newInstance()
