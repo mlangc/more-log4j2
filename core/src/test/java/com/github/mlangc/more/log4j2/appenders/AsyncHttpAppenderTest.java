@@ -578,6 +578,10 @@ class AsyncHttpAppenderTest {
             assertThat(context.stop(15, TimeUnit.SECONDS)).isTrue();
         }
 
+        // Note: `stop` does not wait for batch completion listeners, so the events might arrive shortly after it returned.
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
+                assertThat(batchCompletionListener.getLastBatchCompletionEvents()).isNotEmpty());
+
         assertThat(batchCompletionListener.getLastBatchCompletionEvents())
                 .isNotEmpty()
                 .allSatisfy(evt -> {
@@ -1915,9 +1919,11 @@ class AsyncHttpAppenderTest {
             context.getLogger(getClass()).info("test");
         }
 
-        assertThat(completionListener.getLastBatchCompletionEvents())
-                .map(AsyncHttpAppender.BatchCompletionEvent::type)
-                .containsExactly(new AsyncHttpAppender.BatchDeliveredSuccess(new HttpStatus(200, bodyMessage)));
+        // Note: `stop` does not wait for batch completion listeners, so the events might arrive shortly after it returned.
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
+                assertThat(completionListener.getLastBatchCompletionEvents())
+                        .map(AsyncHttpAppender.BatchCompletionEvent::type)
+                        .containsExactly(new AsyncHttpAppender.BatchDeliveredSuccess(new HttpStatus(200, bodyMessage))));
     }
 
     @ParameterizedTest
@@ -1944,9 +1950,11 @@ class AsyncHttpAppenderTest {
             context.getLogger(getClass()).info("test");
         }
 
-        assertThat(completionListener.getLastBatchCompletionEvents())
-                .map(AsyncHttpAppender.BatchCompletionEvent::type)
-                .containsExactly(new AsyncHttpAppender.BatchDeliveredSuccess(new HttpStatus(200, bodyMessage)));
+        // Note: `stop` does not wait for batch completion listeners, so the events might arrive shortly after it returned.
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
+                assertThat(completionListener.getLastBatchCompletionEvents())
+                        .map(AsyncHttpAppender.BatchCompletionEvent::type)
+                        .containsExactly(new AsyncHttpAppender.BatchDeliveredSuccess(new HttpStatus(200, bodyMessage))));
     }
 
     @Test

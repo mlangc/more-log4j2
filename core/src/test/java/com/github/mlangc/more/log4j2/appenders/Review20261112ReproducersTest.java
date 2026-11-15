@@ -302,9 +302,11 @@ class Review20261112ReproducersTest {
             context.getLogger(getClass()).info("x");
         }
 
-        assertThat(listener.events).singleElement().satisfies(evt ->
-                assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, success ->
-                        assertThat(success.httpStatus().message().length()).isLessThan(100_000)));
+        // Note: `stop` does not wait for batch completion listeners, so the events might arrive shortly after it returned.
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
+                assertThat(listener.events).singleElement().satisfies(evt ->
+                        assertThat(evt.type()).isInstanceOfSatisfying(AsyncHttpAppender.BatchDeliveredSuccess.class, success ->
+                                assertThat(success.httpStatus().message().length()).isLessThan(100_000))));
     }
 
     @Test
@@ -404,6 +406,10 @@ class Review20261112ReproducersTest {
             log.info(""); // <-- serialized to zero bytes, which leaves `currentBatchBytes` at 0
             log.info("abc"); // <-- the separator in front of this event is therefore not accounted for
         }
+
+        // Note: `stop` does not wait for batch completion listeners, so the events might arrive shortly after it returned.
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
+                assertThat(listener.deliveredLogEvents()).isEqualTo(2));
 
         assertThat(listener.events).isNotEmpty().allSatisfy(evt ->
                 assertThat(evt.stats().batchBytesUncompressed()).isLessThanOrEqualTo(maxBatchBytes));
