@@ -1179,6 +1179,41 @@ class AsyncHttpAppenderTest {
     }
 
     @Test
+    void eventAppendedAfterBlockingOnOverflowShouldNotWaitForMoreLogs() {
+        var lingerMs = 20;
+        var requestMs = 5 * lingerMs;
+        wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(requestMs)));
+
+        var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        configBuilder = configBuilder
+                .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                        .addAttribute("url", wireMockHttpUrl)
+                        .addAttribute("lingerMs", lingerMs)
+                        .addAttribute("maxBatchLogEvents", 1)
+                        .addAttribute("maxConcurrentRequests", 1)
+                        .addAttribute("maxBatchBufferBatches", 1)
+                        .addAttribute("maxBlockOnOverflowMs", 100 * requestMs)
+                        .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg")))
+                .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+
+        try (var context = TestHelpers.loggerContextFromConfig(configBuilder)) {
+            var log = context.getLogger(getClass());
+
+            log.info("e1"); // <-- sent immediately, occupies the only request slot
+            log.info("e2"); // <-- occupies the only buffer slot
+            log.info("e3"); // <-- stays in the current batch; its linger flush fails, since the buffer is full
+            log.info("e4"); // <-- blocks until there is room again
+
+            // Implementation note: When "e4" is finally appended, the batch might already have been emptied by the pending
+            // linger flush of "e3". The blocked append must then schedule the linger flush for "e4" itself, or "e4" stays
+            // in the current batch until more logs arrive or the appender is stopped. Whether the blocked append finds an
+            // empty batch depends on timing, so this test does not fail reliably if this is broken.
+            Awaitility.await().atMost(20 * requestMs, TimeUnit.MILLISECONDS).untilAsserted(() ->
+                    wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo("e4"))));
+        }
+    }
+
+    @Test
     void forceFlushAndAwaitShouldWorkReliably() {
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(10)));
 

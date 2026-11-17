@@ -358,54 +358,24 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         lock.lock();
         try {
-            var overflow = false;
             if (currentBatch.isEmpty()) {
-                rescheduleFlushAssumeLocked();
+                rescheduleLingerFlushAssumeLocked();
             }
 
+            var overflow = false;
             if (needsFlushAssumeLocked(eventBytes)) {
                 overflow = !tryFlushAssumingLocked();
 
                 if (!overflow) {
-                    rescheduleFlushAssumeLocked();
+                    rescheduleLingerFlushAssumeLocked();
                 }
             }
 
             if (!overflow) {
-                if (currentBatch.isEmpty()) {
-                    currentBatchBytes += batchPrefix.length;
-                } else if (needSeparatorAssumeLocked(eventBytes)) {
-                    currentBatchBytes += batchSeparator.length;
-                }
-
-                currentBatch.add(eventBytes);
-                currentBatchBytes += eventBytes.length;
-            } else {
-                if (lockCondition != null) {
-                    var remainingNanos = TimeUnit.MILLISECONDS.toNanos(maxBlockOnOverflowMs);
-                    do {
-                        remainingNanos = lockCondition.awaitNanos(remainingNanos);
-
-                        if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
-                            if (currentBatch.isEmpty()) {
-                                currentBatchBytes += batchPrefix.length;
-                            } else if (needSeparatorAssumeLocked(eventBytes)) {
-                                currentBatchBytes += batchSeparator.length;
-                            }
-
-                            currentBatch.add(eventBytes);
-                            currentBatchBytes += eventBytes.length;
-                            overflow = false;
-                            rescheduleFlushAssumeLocked();
-                            break;
-                        }
-                    } while (remainingNanos > 0);
-                }
-
-                if (overflow) {
-                    // We could forward the event here directly, but it seems slightly preferable to do this after releasing the lock.
-                    useOverflowAppenderControl = overflowAppenderControl;
-                }
+                addToCurrentBatchAssumeLocked(eventBytes);
+            } else if (lockCondition == null || !tryWaitUntilAppendedAssumeLocked(eventBytes)) {
+                // We could forward the event here directly, but it seems slightly preferable to do this after releasing the lock.
+                useOverflowAppenderControl = overflowAppenderControl;
             }
         } catch (InterruptedException e) {
             getStatusLogger().warn("Interrupted while waiting for free slot in batch buffer", e);
@@ -420,7 +390,36 @@ public class AsyncHttpAppender extends AbstractAppender {
         }
     }
 
-    private void rescheduleFlushAssumeLocked() {
+    private boolean tryWaitUntilAppendedAssumeLocked(byte[] eventBytes) throws InterruptedException {
+        var remainingNanos = TimeUnit.MILLISECONDS.toNanos(maxBlockOnOverflowMs);
+        do {
+            remainingNanos = lockCondition.awaitNanos(remainingNanos);
+
+            if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
+                if (currentBatch.isEmpty()) {
+                    rescheduleLingerFlushAssumeLocked();
+                }
+
+                addToCurrentBatchAssumeLocked(eventBytes);
+                return true;
+            }
+        } while (remainingNanos > 0);
+
+        return false;
+    }
+
+    private void addToCurrentBatchAssumeLocked(byte[] eventBytes) {
+        if (currentBatch.isEmpty()) {
+            currentBatchBytes += batchPrefix.length;
+        } else if (needSeparatorAssumeLocked(eventBytes)) {
+            currentBatchBytes += batchSeparator.length;
+        }
+
+        currentBatch.add(eventBytes);
+        currentBatchBytes += eventBytes.length;
+    }
+
+    private void rescheduleLingerFlushAssumeLocked() {
         firstRecordNanos = ticker.nanoTime();
 
         if (scheduledFlush != null) {
