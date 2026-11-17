@@ -1179,7 +1179,7 @@ class AsyncHttpAppenderTest {
     }
 
     @Test
-    void eventAppendedAfterBlockingOnOverflowShouldNotWaitForMoreLogs() {
+    void appendAfterBlockingOnOverflowShouldScheduleLingerFlush() {
         var lingerMs = 20;
         var requestMs = 5 * lingerMs;
         wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(requestMs)));

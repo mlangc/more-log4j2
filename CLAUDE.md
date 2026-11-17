@@ -153,8 +153,8 @@ Invariants to be aware of when reading or reviewing the code:
   flush-fits-check both match `createBatchAssumingLocked`'s layout exactly under both
   `ALWAYS` and `IF_MISSING`.
 - **Linger anchor**: `firstRecordNanos` and `scheduledFlush` are reset together via
-  `rescheduleFlushAssumeLocked` — call it from any new code path that empties `currentBatch`
-  and lets a new batch start.
+  `startLingerAssumeLocked` — call it whenever an event is added to an empty
+  `currentBatch`, since paths that empty the batch (such as the linger flush) don't.
 - **Never null `scheduledFlush` on task completion** — only the shutdown path does. A stale
   fire nulling a freshly-rescheduled future would defeat the next `cancel(false)`.
 

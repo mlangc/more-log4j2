@@ -359,7 +359,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         lock.lock();
         try {
             if (currentBatch.isEmpty()) {
-                rescheduleLingerFlushAssumeLocked();
+                startLingerAssumeLocked();
             }
 
             var overflow = false;
@@ -367,7 +367,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                 overflow = !tryFlushAssumingLocked();
 
                 if (!overflow) {
-                    rescheduleLingerFlushAssumeLocked();
+                    startLingerAssumeLocked();
                 }
             }
 
@@ -397,7 +397,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
             if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
                 if (currentBatch.isEmpty()) {
-                    rescheduleLingerFlushAssumeLocked();
+                    startLingerAssumeLocked();
                 }
 
                 addToCurrentBatchAssumeLocked(eventBytes);
@@ -419,7 +419,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         currentBatchBytes += eventBytes.length;
     }
 
-    private void rescheduleLingerFlushAssumeLocked() {
+    private void startLingerAssumeLocked() {
         firstRecordNanos = ticker.nanoTime();
 
         if (scheduledFlush != null) {
