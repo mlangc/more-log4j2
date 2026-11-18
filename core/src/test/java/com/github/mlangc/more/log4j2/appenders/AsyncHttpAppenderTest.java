@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -1396,7 +1396,7 @@ class AsyncHttpAppenderTest {
         }
 
         @ParameterizedTest
-        @ValueSource(strings = { " charset=;;;", "", " charset=???", "noset=utf8", "charset==utf99", " charset=", "charset=utf-999"})
+        @ValueSource(strings = {" charset=;;;", "", " charset=???", "noset=utf8", "charset==utf99", " charset=", "charset=utf-999"})
         void shouldIgnoreBrokenCharsetHeaders(String brokenSpec) {
             var bodyMessage = "Liebe Grüße aus Österreich";
 
@@ -2069,6 +2069,70 @@ class AsyncHttpAppenderTest {
                     .toArray();
 
             assertThat(elapsedMillis).isSorted();
+        }
+    }
+
+    @Nested
+    class Reconfiguration {
+        @ParameterizedTest
+        @ValueSource(booleans = {false, true})
+        void shouldNotLoseLogsIfReconfiguredUnderLoad(boolean changeHttpClientSettings) throws Exception {
+            // Implementation note: Appenders with identical HTTP client settings share their HttpClientManager, and
+            // with that their executor; with changed settings, the new appender gets a manager of its own. Log4j
+            // starts the new configuration before it stops the old one.
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(5)));
+
+            var readTimeoutMsBefore = 10_000;
+            var readTimeoutMsAfter = changeHttpClientSettings ? 20_000 : readTimeoutMsBefore;
+
+            IntFunction<ConfigurationBuilder<BuiltConfiguration>> newConfig = readTimeoutMs -> {
+                var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
+
+                return configBuilder
+                        .setStatusLevel(Level.WARN)
+                        .add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
+                                .addAttribute("url", wireMockHttpUrl)
+                                .addAttribute("readTimeoutMs", readTimeoutMs)
+                                .addAttribute("maxBatchLogEvents", 10)
+                                .addAttribute("lingerMs", 5)
+                                .addAttribute("maxBlockOnOverflowMs", 10_000)
+                                .add(configBuilder.newLayout("PatternLayout").addAttribute("pattern", "%msg%n")))
+                        .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("AsyncHttp")));
+            };
+
+            int numLogs;
+            try (var context = TestHelpers.loggerContextFromConfig(newConfig.apply(readTimeoutMsBefore))) {
+                var log = context.getLogger(getClass());
+                var appenderBefore = TestHelpers.findAppender(context, AsyncHttpAppender.class);
+
+                var stop = new AtomicBoolean();
+                var logging = CompletableFuture.supplyAsync(() -> {
+                    var i = 0;
+                    while (!stop.get()) {
+                        log.info("{}", i++);
+                    }
+                    return i;
+                }, executor);
+
+                Awaitility.await().atMost(10, TimeUnit.SECONDS)
+                        .until(() -> wireMock.getAllServeEvents().size() >= 10);
+
+                var requestsBeforeReconfiguration = wireMock.getAllServeEvents().size();
+                context.reconfigure(newConfig.apply(readTimeoutMsAfter).build(false));
+                assertThat(TestHelpers.findAppender(context, AsyncHttpAppender.class)).isNotSameAs(appenderBefore);
+
+                Awaitility.await().atMost(10, TimeUnit.SECONDS)
+                        .until(() -> wireMock.getAllServeEvents().size() >= requestsBeforeReconfiguration + 10);
+
+                stop.set(true);
+                numLogs = logging.get(10, TimeUnit.SECONDS);
+            }
+
+            var expectedLines = IntStream.range(0, numLogs).boxed()
+                    .collect(Collectors.toMap(i -> "" + i, ignore -> 1));
+
+            assertThat(collectReceivedLinesPerStatusCode(wireMockPath)).containsOnlyKeys(200);
+            assertThat(collectReceivedLinesPerStatusCode(wireMockPath).get(200)).isEqualTo(expectedLines);
         }
     }
 
