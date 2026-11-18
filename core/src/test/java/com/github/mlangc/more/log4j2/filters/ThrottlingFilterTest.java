@@ -58,7 +58,7 @@ class ThrottlingFilterTest {
         long intervalNanos = TimeUnit.SECONDS.toNanos(1);
         long maxEventPerInterval = 3;
         MutableLong ticker = new MutableLong();
-        ThrottlingFilter filter = new ThrottlingFilter(Result.ACCEPT, Result.DENY, Level.WARN, intervalNanos, maxEventPerInterval, ticker::getValue);
+        ThrottlingFilter filter = new ThrottlingFilter(Result.ACCEPT, Result.DENY, Level.WARN, intervalNanos, maxEventPerInterval, ticker::longValue);
 
         assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
         assertThat(filter.filter(LOG, Level.INFO, null, "not throttled")).isEqualTo(Result.ACCEPT);
@@ -277,6 +277,27 @@ class ThrottlingFilterTest {
         } finally {
             StatusLogger.getLogger().removeListener(statusListener);
         }
+    }
+
+    @Test
+    void shouldAccountForEventInTheProperInterval() {
+        var ticks = new MutableLong(0);
+        var filter = new ThrottlingFilter(Result.ACCEPT, Result.DENY, Level.WARN, 5, 1, ticks::longValue);
+
+        // At most one event from [0, 5):
+        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.ACCEPT);
+        ticks.setValue(4);
+        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.DENY);
+
+        // At most one event from [5, 10):
+        ticks.setValue(9);
+        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.DENY);
+
+        // At most one event from [10, 15):
+        ticks.setValue(11);
+        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.ACCEPT);
+        assertThat(filter.filter(LOG, Level.INFO, null, "test")).isEqualTo(Result.DENY);
     }
 
     private static long countTouchedIntervals(long intervalNanos, long fromNanos, long toNanos) {
