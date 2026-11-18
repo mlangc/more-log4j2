@@ -130,7 +130,7 @@ Appenders extend `AbstractAppender`. Filters do *not* uniformly extend `Abstract
 
 Invariants to be aware of when reading or reviewing the code:
 
-- **Naming**: methods suffixed `AssumeLocked`/`AssumingLocked` must only be called with the
+- **Naming**: methods suffixed `AssumeLocked` must only be called with the
   appender's lock held.
 - **One shared scheduler thread**: all async work — linger flushes, batch draining, retry
   backoff, and the `HttpClient`'s own executor and callbacks — intentionally runs on a
@@ -147,10 +147,10 @@ Invariants to be aware of when reading or reviewing the code:
   `whenComplete` callback re-acquires the lock explicitly when it needs to update shared
   state.
 - **`currentBatchBytes` accounting**: tracks the exact serialized size of the in-progress
-  batch (prefix + events + only those separators that `createBatchAssumingLocked` would
+  batch (prefix + events + only those separators that `createBatchAssumeLocked` would
   actually write under the configured `batchSeparatorInsertionStrategy`). The `append` paths
   and `needsFlushAssumeLocked` consult `needSeparatorAssumeLocked` so the accounting and the
-  flush-fits-check both match `createBatchAssumingLocked`'s layout exactly under both
+  flush-fits-check both match `createBatchAssumeLocked`'s layout exactly under both
   `ALWAYS` and `IF_MISSING`.
 - **Linger anchor**: `firstRecordNanos` and `scheduledFlush` are reset together via
   `startLingerAssumeLocked` — call it whenever an event is added to an empty

@@ -364,7 +364,7 @@ public class AsyncHttpAppender extends AbstractAppender {
 
             var overflow = false;
             if (needsFlushAssumeLocked(eventBytes)) {
-                overflow = !tryFlushAssumingLocked();
+                overflow = !tryFlushAssumeLocked();
 
                 if (!overflow) {
                     startLingerAssumeLocked();
@@ -395,7 +395,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         do {
             remainingNanos = lockCondition.awaitNanos(remainingNanos);
 
-            if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumingLocked()) {
+            if (!needsFlushAssumeLocked(eventBytes) || tryFlushAssumeLocked()) {
                 if (currentBatch.isEmpty()) {
                     startLingerAssumeLocked();
                 }
@@ -470,11 +470,11 @@ public class AsyncHttpAppender extends AbstractAppender {
 
         long elapsed = ticker.nanoTime() - firstRecordNanos;
         if (elapsed > Math.round(lingerNs * 0.95)) {
-            lingerFlushPending = !tryFlushAssumingLocked();
+            lingerFlushPending = !tryFlushAssumeLocked();
         }
     }
 
-    private boolean tryFlushAssumingLocked() {
+    private boolean tryFlushAssumeLocked() {
         if (currentBatch.isEmpty()) {
             return true;
         }
@@ -486,7 +486,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         if ((batchSize + currentBufferBytes <= maxBatchBufferBytes || currentBufferBytes == 0) && bufferedBatches.size() < maxBatchBufferBatches) {
             // Implementation note: Creating a batch can be a relatively expensive operation, especially if compression is enabled.
             // It might therefore be preferable to release the lock before doing so, at least under specific conditions.
-            Batch batch = createBatchAssumingLocked(currentBatch, batchSize);
+            Batch batch = createBatchAssumeLocked(currentBatch, batchSize);
             currentBufferBytes += batch.effectiveBytes();
             bufferedBatches.addLast(batch);
             pendingBatchIds.add(batch.id);
@@ -537,7 +537,7 @@ public class AsyncHttpAppender extends AbstractAppender {
                         currentBufferBytes -= releaseBytes;
                         pendingBatchIds.remove(batchId);
                         pendingBatchesAwaitingFutures.removeIf(
-                                f -> f.onBatchCompletedAssumingLocked(batchId, throwable));
+                                f -> f.onBatchCompletedAssumeLocked(batchId, throwable));
 
                         if (lingerFlushPending) {
                             tryFlushIfLingerElapsedAssumeLocked();
@@ -667,27 +667,27 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
         }
 
-        boolean onBatchCompletedAssumingLocked(long id, Throwable throwable) {
+        boolean onBatchCompletedAssumeLocked(long id, Throwable throwable) {
             if (unflushedId != null && unflushedId == id) {
                 unflushedId = null;
                 if (pendingIds.isEmpty()) {
-                    completeInternal(throwable);
+                    completeInternalAssumeLocked(throwable);
                     return true;
                 }
             } else if (pendingIds.remove(id) && pendingIds.isEmpty() && unflushedId == null) {
-                completeInternal(throwable);
+                completeInternalAssumeLocked(throwable);
                 return true;
             }
 
             if (unflushedId != null && nextBatchId == unflushedId) {
-                tryFlushAssumingLocked();
+                tryFlushAssumeLocked();
             }
 
-            processPotentialThrowable(throwable);
+            processPotentialThrowableAssumeLocked(throwable);
             return false;
         }
 
-        private void processPotentialThrowable(Throwable throwable) {
+        private void processPotentialThrowableAssumeLocked(Throwable throwable) {
             if (throwable == null) {
                 return;
             }
@@ -701,8 +701,8 @@ public class AsyncHttpAppender extends AbstractAppender {
             }
         }
 
-        private void completeInternal(Throwable throwable) {
-            processPotentialThrowable(throwable);
+        private void completeInternalAssumeLocked(Throwable throwable) {
+            processPotentialThrowableAssumeLocked(throwable);
 
             if (completionError == null) {
                 complete(null);
@@ -892,7 +892,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         return batchCompletionListener;
     }
 
-    private Batch createBatchAssumingLocked(List<byte[]> events, int batchSize) {
+    private Batch createBatchAssumeLocked(List<byte[]> events, int batchSize) {
         byte[] res = new byte[batchSize];
         System.arraycopy(batchPrefix, 0, res, 0, batchPrefix.length);
 
@@ -994,7 +994,7 @@ public class AsyncHttpAppender extends AbstractAppender {
         lock.lock();
         try {
             Long unflushedId = null;
-            if (!tryFlushAssumingLocked() && !currentBatch.isEmpty()) {
+            if (!tryFlushAssumeLocked() && !currentBatch.isEmpty()) {
                 unflushedId = nextBatchId;
             }
 
