@@ -357,6 +357,60 @@ make_tsv() {
     [[ "$TEST_FILTER" != *"#"* ]]
 }
 
+@test "load_failing_classes: keeps the nested class of a failing test in a @Nested class" {
+    local tsv="$TEST_TMPDIR/nested.tsv"
+    make_tsv "$tsv"
+    printf '1\tcom.example.FooTest$Inner#testA\tfail\n' >> "$tsv"
+
+    TEST_FILTER=""
+    load_failing_classes "$tsv"
+    [ "$TEST_FILTER" = 'com.example.FooTest$Inner' ]
+}
+
+# ---- build_maven_cmd ----
+
+# Replaces the command with printf, so that eval prints each argument on its own line.
+eval_maven_cmd_args() {
+    local cmd
+    cmd="$(build_maven_cmd)"
+    eval "printf '%s\n' ${cmd#* }"
+}
+
+@test "build_maven_cmd: passes test filters with '\$' and '*' through eval unchanged" {
+    REPO_ROOT="/repo"
+    MODULE="core"
+    TEST_FILTER='com.example.FooTest$Inner,FooTest*#testA'
+    run eval_maven_cmd_args
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "-pl" ]
+    [ "${lines[1]}" = "core" ]
+    [ "${lines[2]}" = "-am" ]
+    [ "${lines[3]}" = '-Dtest=com.example.FooTest$Inner,FooTest*#testA' ]
+}
+
+@test "build_maven_cmd: does not glob test filters against files in the current directory" {
+    REPO_ROOT="/repo"
+    MODULE=""
+    TEST_FILTER='FooTest*'
+    touch "$TEST_TMPDIR/-Dtest=FooTest-matches-glob"
+    cd "$TEST_TMPDIR"
+    run eval_maven_cmd_args
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = '-Dtest=FooTest*' ]
+}
+
+@test "build_maven_cmd: keeps a repository root with spaces as one word" {
+    REPO_ROOT="/path with spaces/repo"
+    MODULE=""
+    TEST_FILTER=""
+    local cmd
+    cmd="$(build_maven_cmd)"
+    eval "set -- $cmd"
+    [ "$1" = "/path with spaces/repo/mvnw" ]
+    [ "$2" = "-B" ]
+    [ "$3" = "test" ]
+}
+
 # ---- parse_args --rerun-failures ----
 
 @test "parse_args: --rerun-failures sets RERUN_FAILURES" {

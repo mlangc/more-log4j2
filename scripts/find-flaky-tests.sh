@@ -65,13 +65,16 @@ parse_args() {
     fi
 }
 
+# The command is run with eval, so every value is quoted with %q: test filters can contain
+# '$' (nested classes, e.g. FooTest$Inner) and '*', and paths can contain spaces.
 build_maven_cmd() {
-    local cmd="${REPO_ROOT}/mvnw"
+    local cmd
+    cmd="$(printf '%q' "${REPO_ROOT}/mvnw")"
     if [[ -n "$MODULE" ]]; then
-        cmd+=" -pl $MODULE -am"
+        cmd+=" -pl $(printf '%q' "$MODULE") -am"
     fi
     if [[ -n "$TEST_FILTER" ]]; then
-        cmd+=" -Dtest=$TEST_FILTER -Dsurefire.failIfNoSpecifiedTests=false"
+        cmd+=" -Dtest=$(printf '%q' "$TEST_FILTER") -Dsurefire.failIfNoSpecifiedTests=false"
     fi
     cmd+=" -B test"
     echo "$cmd"
