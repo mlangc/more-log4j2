@@ -35,6 +35,10 @@ Use the Maven Wrapper (`./mvnw`), not `mvn`:
 ./mvnw -Dtest=ClassName test -pl core -am
 ./mvnw -Dtest='ClassName#methodName' test -pl core -am
 
+# Methods in @Nested classes (as in AsyncHttpAppenderTest) don't match 'ClassName#methodName';
+# use the nested class ('ClassName$Nested#methodName') or a trailing * on the outer one
+./mvnw -Dtest='AsyncHttpAppenderTest*#methodName' test -pl core -am
+
 # Same for a test in junit/: -am pulls in core, where the filter matches nothing,
 # so the extra flag is required
 ./mvnw -Dtest=ClassName -Dsurefire.failIfNoSpecifiedTests=false test -pl junit -am
@@ -185,8 +189,13 @@ Invariants to be aware of when reading or reviewing the code:
 - **`AsyncHttpAppenderTest` path isolation**: `beforeEach` derives a unique `testId` from a
   sequence counter and a unique WireMock path (`"/logs" + testId`) from it, so that
   stub/verify calls in one test cannot interfere with another. It exports `testId`,
-  `wireMockHttpUrl` and `wireMockHttpsUrl` as system properties, which the XML configs
-  consume via `${sys:...}`. Follow the same pattern in new tests.
+  `wireMockPort`, `wireMockHttpUrl` and `wireMockHttpsUrl` as system properties, which the
+  XML configs consume via `${sys:...}`. Follow the same pattern in new tests. Export such
+  values per test, not in `@BeforeAll`: every `@Nested` class gets its own WireMock server
+  on a new port.
+- **`AsyncHttpAppenderTest` structure**: tests are grouped by topic into `@Nested` classes.
+  The outer class holds the shared WireMock setup and the helpers used by several topics;
+  helpers used by one topic live in its nested class. Add new tests to the matching topic.
 - **AssertJ + `Configuration.getAppender()`**: the method's unconstrained generic return
   type (`<T extends Appender> T`) creates an ambiguous overload for AssertJ's `assertThat()`.
   Always cast explicitly: `assertThat((Appender) config.getAppender("name"))`.

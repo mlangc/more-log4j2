@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       test:
-        description: 'Test to run, e.g. AsyncHttpAppenderTest#shouldWorkReliablyUnderStress'
+        description: 'Test to run, e.g. AsyncHttpAppenderTest*#shouldWorkReliablyUnderStress'
         required: false
         default: ''
 
