@@ -188,14 +188,16 @@ Invariants to be aware of when reading or reviewing the code:
 - **WireMock 3.x** is used for HTTP integration tests (AsyncHttpAppender).
 - **`AsyncHttpAppenderTest` path isolation**: `beforeEach` derives a unique `testId` from a
   sequence counter and a unique WireMock path (`"/logs" + testId`) from it, so that
-  stub/verify calls in one test cannot interfere with another. It exports `testId`,
-  `wireMockPort`, `wireMockHttpUrl` and `wireMockHttpsUrl` as system properties, which the
-  XML configs consume via `${sys:...}`. Follow the same pattern in new tests. Export such
-  values per test, not in `@BeforeAll`: every `@Nested` class gets its own WireMock server
-  on a new port.
+  stub/verify calls in one test cannot interfere with another. It also resets WireMock and
+  exports `testId`, `wireMockHttpUrl` and `wireMockHttpsUrl` as system properties, which the
+  XML configs consume via `${sys:...}`; `beforeAll` exports `wireMockPort`. Follow the same
+  pattern in new tests.
 - **`AsyncHttpAppenderTest` structure**: tests are grouped by topic into `@Nested` classes.
   The outer class holds the shared WireMock setup and the helpers used by several topics;
   helpers used by one topic live in its nested class. Add new tests to the matching topic.
+  The WireMock server is started by hand in `beforeAll`: a `WireMockExtension` registered
+  via `@RegisterExtension` would stop it after each nested class and start a new one on a
+  new port.
 - **AssertJ + `Configuration.getAppender()`**: the method's unconstrained generic return
   type (`<T extends Appender> T`) creates an ambiguous overload for AssertJ's `assertThat()`.
   Always cast explicitly: `assertThat((Appender) config.getAppender("name"))`.

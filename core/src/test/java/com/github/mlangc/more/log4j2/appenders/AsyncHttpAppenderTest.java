@@ -24,10 +24,10 @@ import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.ContentEncoding
 import com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.HttpMethod;
 import com.github.mlangc.more.log4j2.test.helpers.CountingAppender;
 import com.github.mlangc.more.log4j2.test.helpers.TestHelpers;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.http.LoggedResponse;
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.matching.UrlPattern;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
@@ -55,7 +55,6 @@ import org.apache.logging.log4j.status.StatusListener;
 import org.apache.logging.log4j.status.StatusLogger;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -174,16 +173,19 @@ class AsyncHttpAppenderTest {
         }
     }
 
-    @RegisterExtension
-    static WireMockExtension wireMockExt = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort().dynamicHttpsPort())
-            .build();
+    // Implementation note: A WireMockExtension registered via @RegisterExtension would start a new server, on a new port,
+    // for each @Nested class.
+    static WireMockServer wireMock;
 
     @BeforeAll
     static void beforeAll() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
         sequence = new AtomicLong();
         executor = new ScheduledThreadPoolExecutor(4, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("test-%d").build());
         executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+
+        wireMock = new WireMockServer(wireMockConfig().dynamicPort().dynamicHttpsPort());
+        wireMock.start();
+        System.setProperty("wireMockPort", "" + wireMock.port());
 
         SSLContext sslContext = SSLContext.getInstance("SSL");
         sslContext.init(null, new TrustManager[]{new WireMockHttpsTrustManager()}, null);
@@ -209,13 +211,14 @@ class AsyncHttpAppenderTest {
         // Note: Each test uses unique paths to exclude the possibility, that there are unexpected interactions between
         // individual tests.
 
+        wireMock.resetAll();
+
         testId = sequence.getAndIncrement();
         wireMockPath = "/logs" + testId;
-        wireMockHttpUrl = "http://localhost:" + wireMockExt.getPort() + wireMockPath;
-        wireMockHttpsUrl = "https://localhost:" + wireMockExt.getHttpsPort() + wireMockPath;
+        wireMockHttpUrl = "http://localhost:" + wireMock.port() + wireMockPath;
+        wireMockHttpsUrl = "https://localhost:" + wireMock.httpsPort() + wireMockPath;
 
         System.setProperty("testId", "" + testId);
-        System.setProperty("wireMockPort", "" + wireMockExt.getPort());
         System.setProperty("wireMockHttpUrl", wireMockHttpUrl);
         System.setProperty("wireMockHttpsUrl", wireMockHttpsUrl);
 
@@ -235,6 +238,9 @@ class AsyncHttpAppenderTest {
 
     @AfterAll
     static void afterAll() throws InterruptedException {
+        wireMock.stop();
+        wireMock = null;
+
         sequence = null;
 
         executor.shutdown();
@@ -278,7 +284,7 @@ class AsyncHttpAppenderTest {
     static Map<Integer, Map<String, Integer>> collectReceivedLinesPerStatusCode(UrlPattern urlPattern) {
         var res = new HashMap<Integer, Map<String, Integer>>();
 
-        for (ServeEvent event : wireMockExt.getAllServeEvents()) {
+        for (ServeEvent event : wireMock.getAllServeEvents()) {
             LoggedRequest request = event.getRequest();
             LoggedResponse response = event.getResponse();
 
@@ -386,7 +392,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldWorkWithMultipleAppendersWithSimilarConfigurations() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var marker1 = MarkerManager.getMarker("marker1");
             var marker2 = MarkerManager.getMarker("marker2");
@@ -550,7 +556,7 @@ class AsyncHttpAppenderTest {
     class Requests {
         @Test
         void shouldPostSingleLogLine() {
-            wireMockExt.stubFor(post(wireMockPath)
+            wireMock.stubFor(post(wireMockPath)
                     .withRequestBody(containing("Hello world"))
                     .willReturn(ok()));
 
@@ -558,12 +564,12 @@ class AsyncHttpAppenderTest {
                 context.getLogger(getClass()).info("Hello world");
             }
 
-            wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void shouldPostAllLogLines() {
-            wireMockExt.stubFor(post(wireMockPath)
+            wireMock.stubFor(post(wireMockPath)
                     .withRequestBody(containing("Hello world"))
                     .willReturn(ok()));
 
@@ -574,7 +580,7 @@ class AsyncHttpAppenderTest {
                 }
             }
 
-            List<String> postedLogLines = wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath))).stream()
+            List<String> postedLogLines = wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath))).stream()
                     .flatMap(AsyncHttpAppenderTest::requestBodyToLinesStream)
                     .collect(Collectors.toList());
 
@@ -587,8 +593,8 @@ class AsyncHttpAppenderTest {
         @ParameterizedTest
         @EnumSource
         void shouldRespectHttpMethod(HttpMethod method) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(method == HttpMethod.POST ? ok() : forbidden()));
-            wireMockExt.stubFor(WireMock.put(wireMockPath).willReturn(method == HttpMethod.PUT ? ok() : forbidden()));
+            wireMock.stubFor(post(wireMockPath).willReturn(method == HttpMethod.POST ? ok() : forbidden()));
+            wireMock.stubFor(WireMock.put(wireMockPath).willReturn(method == HttpMethod.PUT ? ok() : forbidden()));
 
             ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             BuiltConfiguration config = configBuilder.add(configBuilder.newAppender("AsyncHttp", "AsyncHttp")
@@ -603,12 +609,12 @@ class AsyncHttpAppenderTest {
                 context.getLogger(getClass()).info("test");
             }
 
-            wireMockExt.verify(1, requestedFor(method.name(), urlEqualTo(wireMockPath)));
+            wireMock.verify(1, requestedFor(method.name(), urlEqualTo(wireMockPath)));
         }
 
         @Test
         void shouldRespectGzipContentEncoding() {
-            wireMockExt.stubFor(post(wireMockPath)
+            wireMock.stubFor(post(wireMockPath)
                     .withHeader("Content-Encoding", equalTo("gzip"))
                     .willReturn(ok()));
 
@@ -648,7 +654,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectPropertiesAndSendThemAsHttpHeaders() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
             System.setProperty("testPropertyName", "dynamo");
             System.setProperty("testPropertyValue", "kyiv");
 
@@ -658,7 +664,7 @@ class AsyncHttpAppenderTest {
             }
 
             var javaLookup = new JavaLookup();
-            wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath))
+            wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath))
                     .withHeader("x", equalTo("y"))
                     .withHeader("java.version", equalTo(javaLookup.lookup(null, "version")))
                     .withHeader("dynamo", equalTo("kyiv"))
@@ -666,7 +672,7 @@ class AsyncHttpAppenderTest {
         }
 
         private void shouldRespectAppenderFilters(LoggerContext context) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var log = context.getLogger(getClass());
             log.info("x");
@@ -684,7 +690,7 @@ class AsyncHttpAppenderTest {
         @ParameterizedTest
         @ValueSource(ints = {1, 2, 11, 23})
         void shouldRespectMaxBatchLogEvents(int maxBatchLogEvents) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -707,7 +713,7 @@ class AsyncHttpAppenderTest {
                 }
             }
 
-            assertThat(wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
                     .hasSize(expectedBatches)
                     .allSatisfy(request -> assertThat(requestBodyToLines(request))
                             .hasSize(maxBatchLogEvents)
@@ -716,7 +722,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectSeparatorInsertionStrategyIfAlways() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWithSeparatorInsertionAlways.xml")) {
                 var log = context.getLogger(getClass());
@@ -728,7 +734,7 @@ class AsyncHttpAppenderTest {
                 log.info("#");
             }
 
-            assertThat(wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
                     .hasSize(1)
                     .map(LoggedRequest::getBodyAsString)
                     .first()
@@ -737,7 +743,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectSeparatorInsertionStrategyIfMissing() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWithSeparatorInsertionIfMissing.xml")) {
                 var log = context.getLogger(getClass());
@@ -749,7 +755,7 @@ class AsyncHttpAppenderTest {
                 log.info("#");
             }
 
-            assertThat(wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
                     .hasSize(1)
                     .map(LoggedRequest::getBodyAsString)
                     .first()
@@ -758,14 +764,14 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectBatchPrefixAndSuffix() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWithPrefixAndSuffix.xml")) {
                 var log = context.getLogger(getClass());
                 log.info("hello");
             }
 
-            assertThat(wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath))))
                     .hasSize(1)
                     .map(LoggedRequest::getBodyAsString)
                     .first()
@@ -774,17 +780,17 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectLingerMs() throws InterruptedException {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.with500msLingerMs.xml")) {
                 var log = context.getLogger(getClass());
                 log.info("tada");
 
                 Thread.sleep(250);
-                wireMockExt.verify(0, postRequestedFor(urlEqualTo(wireMockPath)));
+                wireMock.verify(0, postRequestedFor(urlEqualTo(wireMockPath)));
 
                 Awaitility.await().atMost(500, TimeUnit.MILLISECONDS)
-                        .untilAsserted(() -> wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath))));
+                        .untilAsserted(() -> wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath))));
             }
         }
 
@@ -803,7 +809,7 @@ class AsyncHttpAppenderTest {
         }
 
         private void shouldPush3shortLogs(LoggerContext context) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var log = context.getLogger(getClass());
             log.warn("tada");
@@ -811,7 +817,7 @@ class AsyncHttpAppenderTest {
             log.warn("trörö");
             assertThat(context.stop(5, TimeUnit.SECONDS)).isTrue();
 
-            List<LoggedRequest> postRequests = wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
+            List<LoggedRequest> postRequests = wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
             assertThat(postRequests)
                     .as(postRequests::toString)
                     .hasSize(3)
@@ -821,14 +827,14 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldNotDropLogLineThatExceedsBatchBufferSize() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWithMaxBatchBytes1.xml")) {
                 var log = context.getLogger(getClass());
                 log.info("loooooooooooooooooooooooooooooooooooooooooooooooooooooong");
             }
 
-            List<LoggedRequest> postRequests = wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
+            List<LoggedRequest> postRequests = wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
             assertThat(postRequests)
                     .as(postRequests::toString)
                     .hasSize(1)
@@ -838,7 +844,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldWorkWithVeryLongBatchSeparator() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWithVeryLongSeparator.xml")) {
                 var log = context.getLogger(getClass());
@@ -847,12 +853,12 @@ class AsyncHttpAppenderTest {
                 log.info("###");
             }
 
-            wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo("###l012345678901234567890123456789g###l012345678901234567890123456789g###")));
+            wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo("###l012345678901234567890123456789g###l012345678901234567890123456789g###")));
         }
 
         @Test
         void shouldRespectMaxBatchBytesInSimpleScenario() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             final var maxBatchBytes = 300;
             ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
@@ -877,13 +883,13 @@ class AsyncHttpAppenderTest {
                 log.info(longLogLine);
             }
 
-            wireMockExt.verify(2, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(2, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @ParameterizedTest
         @ValueSource(ints = {200, 500, 1000, 2000})
         void shouldRespectSmallMaxBatchBytes(int maxBatchBytes) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             final var separator = "#!#";
             final var prefix = "begin{";
@@ -914,7 +920,7 @@ class AsyncHttpAppenderTest {
                 }
             }
 
-            var requests = wireMockExt.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
+            var requests = wireMock.findAll(postRequestedFor(urlEqualTo(wireMockPath)));
 
             assertThat(requests)
                     .isNotEmpty()
@@ -930,7 +936,7 @@ class AsyncHttpAppenderTest {
         @ParameterizedTest
         @ValueSource(ints = {0, 1})
         void shouldRespectMaxBatchBytesZeroAndOne(int maxBatchBytes) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -950,12 +956,12 @@ class AsyncHttpAppenderTest {
                 }
             }
 
-            wireMockExt.verify(numLogs, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(numLogs, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void shouldRespectMaxBatchBytesIntMax() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -978,12 +984,12 @@ class AsyncHttpAppenderTest {
                 }
             }
 
-            wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void shouldRespectMaxBatchBytesIncludingSeparators() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1012,7 +1018,7 @@ class AsyncHttpAppenderTest {
 
         @RepeatedTest(5)
         void shouldRespectMaxBatchBytesIncludingSeparatorsIfOverloaded() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var prefix = "{";
             var suffix = "}";
@@ -1061,7 +1067,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldAccountForSkippedSeparatorsWhenCheckingAgainstMaxBatchBytes() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1087,7 +1093,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldNotWronglyAccountForSkippedSeparatorsWhenCheckingAgainstMaxBatchBytes() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1125,7 +1131,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectLingerMsAfterSizeBasedFlush() throws InterruptedException {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var lingerMs = 250;
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
@@ -1165,13 +1171,13 @@ class AsyncHttpAppenderTest {
     class ResponsesAndRetries {
         @Test
         void shouldSendEverythingTwiceIfEndpointAlwaysFailsTheFirstTime() {
-            wireMockExt.stubFor(post(wireMockPath)
+            wireMock.stubFor(post(wireMockPath)
                     .inScenario("flaky service")
                     .whenScenarioStateIs(Scenario.STARTED)
                     .willSetStateTo("working")
                     .willReturn(aResponse().withStatus(500)));
 
-            wireMockExt.stubFor(post(wireMockPath)
+            wireMock.stubFor(post(wireMockPath)
                     .inScenario("flaky service")
                     .whenScenarioStateIs("working")
                     .willSetStateTo(Scenario.STARTED)
@@ -1205,7 +1211,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldNotRetryOn400InDefaultConfig() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(badRequest()));
+            wireMock.stubFor(post(wireMockPath).willReturn(badRequest()));
 
             var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.minimalWiremockHttpConfig.xml");
             try {
@@ -1215,13 +1221,13 @@ class AsyncHttpAppenderTest {
                 assertThat(context.stop(1, TimeUnit.SECONDS)).isTrue();
             }
 
-            wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void shouldRespectHttpSuccessAndRetryCodesEvenIfTheyAreWeired() throws InterruptedException {
-            wireMockExt.stubFor(post("/logs/love500").willReturn(serverError()));
-            wireMockExt.stubFor(post("/logs/hate500").willReturn(serverError()));
+            wireMock.stubFor(post("/logs/love500").willReturn(serverError()));
+            wireMock.stubFor(post("/logs/hate500").willReturn(serverError()));
 
             try (var context = TestHelpers.loggerContextFromTestResource("AsyncHttpAppenderTest.configWeiredHttpCodes.xml")) {
                 var love500Marker = MarkerManager.getMarker("love500");
@@ -1233,13 +1239,13 @@ class AsyncHttpAppenderTest {
                 Thread.sleep(5); // <-- wait shortly for linger & retries
             }
 
-            assertThat(wireMockExt.findAll(postRequestedFor(urlEqualTo("/logs/love500"))))
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo("/logs/love500"))))
                     .hasSize(1)
                     .map(LoggedRequest::getBodyAsString)
                     .first()
                     .isEqualTo("500 reasons for love");
 
-            assertThat(wireMockExt.findAll(postRequestedFor(urlEqualTo("/logs/hate500"))))
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo("/logs/hate500"))))
                     .hasSize(2)
                     .map(LoggedRequest::getBodyAsString)
                     .allSatisfy(s -> assertThat(s).isEqualTo("500 reasons for hate"));
@@ -1248,7 +1254,7 @@ class AsyncHttpAppenderTest {
         @Test
         void shouldRespectReadTimeoutMs() {
             var timeoutMs = 50;
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(2 * timeoutMs)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(2 * timeoutMs)));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1277,7 +1283,7 @@ class AsyncHttpAppenderTest {
                                             f -> assertThat(f.exception()).cause().isInstanceOf(HttpTimeoutException.class));
                                 }));
 
-                wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(timeoutMs / 2)));
+                wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(timeoutMs / 2)));
 
                 log.info("yyy");
 
@@ -1306,7 +1312,7 @@ class AsyncHttpAppenderTest {
                     stubBuilder.willReturn(serviceUnavailable());
                 }
 
-                wireMockExt.stubFor(stubBuilder);
+                wireMock.stubFor(stubBuilder);
             }
 
             IntToLongFunction totalBackoffNanosForBackoffMs = backoffMs -> {
@@ -1363,7 +1369,7 @@ class AsyncHttpAppenderTest {
             var trailingSpaces = " ".repeat(numTrailingSpaces);
             var quote = insertQuotes ? "\"" : "";
 
-            wireMockExt.stubFor(post(wireMockPath).willReturn(
+            wireMock.stubFor(post(wireMockPath).willReturn(
                     aResponse()
                             .withHeader("Content-Type", "text/plain;" + leadingSpaces + "chArset=" + quote + charsetName + quote + trailingSpaces)
                             .withBody(bodyMessage.getBytes(Charset.forName(charsetName)))));
@@ -1394,7 +1400,7 @@ class AsyncHttpAppenderTest {
         void shouldIgnoreBrokenCharsetHeaders(String brokenSpec) {
             var bodyMessage = "Liebe Grüße aus Österreich";
 
-            wireMockExt.stubFor(post(wireMockPath).willReturn(
+            wireMock.stubFor(post(wireMockPath).willReturn(
                     aResponse()
                             .withHeader("Content-type", "text/plain; " + brokenSpec)
                             .withBody(bodyMessage.getBytes(StandardCharsets.UTF_8))));
@@ -1425,7 +1431,7 @@ class AsyncHttpAppenderTest {
     class Overflow {
         @Test
         void appenderShouldNotBlockIfHttpEndpointIsExtremelySlow() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withLogNormalRandomDelay(1000, 2)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withLogNormalRandomDelay(1000, 2)));
 
             String configName = AsyncHttpAppenderTest.class.getSimpleName();
             ConfigurationBuilder<BuiltConfiguration> configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
@@ -1453,12 +1459,12 @@ class AsyncHttpAppenderTest {
                 context.stop(250, TimeUnit.MILLISECONDS);
             }
 
-            wireMockExt.verify(moreThan(1), postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(moreThan(1), postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void shouldNotDropBatchesIfMaxBlockOnOverflowMsIsHuge() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1487,14 +1493,14 @@ class AsyncHttpAppenderTest {
             }
 
             assertThat(countingAppender.currentCount()).isZero();
-            wireMockExt.verify(logLines, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(logLines, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void appendAfterBlockingOnOverflowShouldScheduleLingerFlush() {
             var lingerMs = 20;
             var requestMs = 5 * lingerMs;
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(requestMs)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(requestMs)));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1521,13 +1527,13 @@ class AsyncHttpAppenderTest {
                 // in the current batch until more logs arrive or the appender is stopped. Whether the blocked append finds an
                 // empty batch depends on timing, so this test does not fail reliably if this is broken.
                 Awaitility.await().atMost(20 * requestMs, TimeUnit.MILLISECONDS).untilAsserted(() ->
-                        wireMockExt.verify(1, postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo("e4"))));
+                        wireMock.verify(1, postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo("e4"))));
             }
         }
 
         @Test
         void droppedBatchesShouldBeConsistentWithDataSentToBackend() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(250)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(250)));
 
             final var numLongMessages = 3;
             String longMessage;
@@ -1546,13 +1552,13 @@ class AsyncHttpAppenderTest {
 
             var batchesDropped = overflowAppender.currentCount();
             assertThat(batchesDropped).isPositive();
-            wireMockExt.verify(Math.toIntExact(numLongMessages - batchesDropped), postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo(longMessage)));
+            wireMock.verify(Math.toIntExact(numLongMessages - batchesDropped), postRequestedFor(urlEqualTo(wireMockPath)).withRequestBody(equalTo(longMessage)));
         }
 
         @ParameterizedTest
         @ValueSource(ints = {1, 2, 5, 50})
         void shouldRespectMaxBatchBufferBatches(int maxBatchBufferBatches) {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1594,7 +1600,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldDropLogsIfOverloadedAndAggressiveBlockMs() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1624,12 +1630,12 @@ class AsyncHttpAppenderTest {
             }
 
             var expectedRequests = Math.toIntExact(logEvents.longValue() - countingAppender.currentCount());
-            wireMockExt.verify(expectedRequests, postRequestedFor(urlEqualTo(wireMockPath)));
+            wireMock.verify(expectedRequests, postRequestedFor(urlEqualTo(wireMockPath)));
         }
 
         @Test
         void appendShouldInterruptThreadAfterCatchingInterruptedException() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(50)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(50)));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1682,17 +1688,17 @@ class AsyncHttpAppenderTest {
         void shouldProperlyReportBatchCompletionEvents() {
             var scenarioName = "okFailFailScenario";
 
-            wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
+            wireMock.stubFor(post(wireMockPath).inScenario(scenarioName)
                     .willReturn(ok().withBody("OK"))
                     .whenScenarioStateIs(Scenario.STARTED)
                     .willSetStateTo("fail1"));
 
-            wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
+            wireMock.stubFor(post(wireMockPath).inScenario(scenarioName)
                     .willReturn(aResponse().withStatus(507).withFault(Fault.MALFORMED_RESPONSE_CHUNK))
                     .whenScenarioStateIs("fail1")
                     .willSetStateTo("fail2"));
 
-            wireMockExt.stubFor(post(wireMockPath).inScenario(scenarioName)
+            wireMock.stubFor(post(wireMockPath).inScenario(scenarioName)
                     .willReturn(badRequest().withBody("Bad Request"))
                     .whenScenarioStateIs("fail2")
                     .willSetStateTo(Scenario.STARTED));
@@ -1710,7 +1716,7 @@ class AsyncHttpAppenderTest {
                     assertThat(batchCompletionListener.getLastBatchCompletionEvents())
                             .hasSize(1)
                             .allSatisfy(evt -> {
-                                Supplier<String> debugInfo = () -> wireMockExt.getAllServeEvents().stream()
+                                Supplier<String> debugInfo = () -> wireMock.getAllServeEvents().stream()
                                         .map(ServeEvent::getResponse)
                                         .map(LoggedResponse::getBodyAsString)
                                         .collect(Collectors.joining(",", "(((", ")))"));
@@ -1800,7 +1806,7 @@ class AsyncHttpAppenderTest {
                 case SUCCESS, ERROR_STATUS, CONNECTION_RESET -> 10_000;
             };
 
-            wireMockExt.stubFor(post(wireMockPath).willReturn(switch (outcome) {
+            wireMock.stubFor(post(wireMockPath).willReturn(switch (outcome) {
                 case SUCCESS -> ok();
                 case ERROR_STATUS -> serverError();
                 case CONNECTION_RESET -> aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER);
@@ -1836,7 +1842,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldInvokeCompletionListenerAndShutdownCleanlyEvenIfConfiguredWithInvalidHttpHeader() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1883,7 +1889,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldDealWithBrokenCompletionListenerSensibly() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok()));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok()));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             configBuilder = configBuilder
@@ -1947,7 +1953,7 @@ class AsyncHttpAppenderTest {
     class FlushAndShutdown {
         @Test
         void forceFlushAndAwaitShouldWorkReliably() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(10)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(10)));
 
             final var maxBatchLogEvents = 5;
             final var numLogs = maxBatchLogEvents * 5 + 1;
@@ -1992,7 +1998,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void forceFlushShouldPropagateExceptions() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(forbidden().withFixedDelay(100)));
+            wireMock.stubFor(post(wireMockPath).willReturn(forbidden().withFixedDelay(100)));
 
             var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
             int maxConcurrentRequests = 20;
@@ -2030,7 +2036,7 @@ class AsyncHttpAppenderTest {
 
         @Test
         void shouldRespectShutdownMs() {
-            wireMockExt.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
+            wireMock.stubFor(post(wireMockPath).willReturn(ok().withFixedDelay(1)));
 
             IntToLongFunction logAndClose = shutdownMs -> {
                 var configBuilder = ConfigurationBuilderFactory.newConfigurationBuilder();
@@ -2185,7 +2191,7 @@ class AsyncHttpAppenderTest {
                 var mapping = post(wireMockPath);
                 configureMappingWithRandomFailuresAndTimeouts(
                         mapping, timeoutMs + timeoutMs / 4, testCase.serverFailureRate, testCase.medianServerResponseMs, testCase.medianServerResponseSigma, timeoutRatio, nonRetryableRatio);
-                wireMockExt.stubFor(mapping);
+                wireMock.stubFor(mapping);
             };
 
             configureWireMock.run();
@@ -2254,7 +2260,7 @@ class AsyncHttpAppenderTest {
 
             var receivedLinesPerStatusCode = collectReceivedLinesPerStatusCode(wireMockPath);
             assertThat(receivedLinesPerStatusCode.get(200))
-                    .as(() -> wireMockExt.getAllServeEvents().toString())
+                    .as(() -> wireMock.getAllServeEvents().toString())
                     .isNotEmpty()
                     .allSatisfy((line, count) -> assertThat(count).isOne());
 
