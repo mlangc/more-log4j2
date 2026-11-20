@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * 
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -2246,6 +2246,11 @@ class AsyncHttpAppenderTest {
         void shouldWorkReliablyUnderStress(StressTestCase testCase) {
             var timeoutMs = 500;
 
+            // A timed out request is retried even if the server already received it, which duplicates its batch. Test
+            // cases that must eventually succeed don't inject timeouts, so a short read timeout only makes them flaky
+            // on slow CI runners.
+            var readTimeoutMs = testCase.mustEventuallySucceed ? 10_000 : timeoutMs;
+
             var url = testCase.https ? wireMockHttpsUrl : wireMockHttpUrl;
 
             var timeoutRatio = testCase.mustEventuallySucceed ? 0.0 : 0.1;
@@ -2273,7 +2278,7 @@ class AsyncHttpAppenderTest {
                             .addAttribute("maxBatchLogEvents", testCase.maxBatchLogEvents)
                             .addAttribute("maxBlockOnOverflowMs", testCase.maxBlockOnOverflowMs)
                             .addAttribute("retries", testCase.retries)
-                            .addAttribute("readTimeoutMs", timeoutMs)
+                            .addAttribute("readTimeoutMs", readTimeoutMs)
                             .addAttribute("connectTimeoutMs", timeoutMs)
                             .addAttribute("maxBackoffMs", testCase.maxBackoffMs)
                             .addAttribute("httpClientSslConfigSupplier", AsyncHttpAppenderTest.class.getCanonicalName() + "$" + SslConfigSupplier.class.getSimpleName())
