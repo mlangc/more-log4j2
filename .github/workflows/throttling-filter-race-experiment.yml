@@ -1,0 +1,66 @@
+# Experiment: measures how many extra events ThrottlingFilter lets through because of the race
+# between startTicks.compareAndSet(...) and eventCounter.set(1). Runs
+# ThrottlingFilterRaceExperiment (a main program under core/src/test) and uploads its output.
+# Triggered by pushes to the experiment branch, or manually once the workflow is on the default branch.
+
+name: ThrottlingFilter race experiment
+
+on:
+  push:
+    branches: [ "experiment/throttling-filter-race" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [ '17', '21' ]
+    name: experiment (JDK ${{ matrix.java-version }})
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Set up JDK ${{ matrix.java-version }}
+      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'temurin'
+        cache: maven
+    - name: Describe runner
+      run: |
+        nproc
+        lscpu | grep -E 'Model name|^CPU\(s\)|Thread|Core|Socket' || true
+        java -version
+    - name: Compile
+      run: |
+        ./mvnw -B -q test-compile -pl core -am
+        ./mvnw -B -q -pl core dependency:build-classpath -Dmdep.outputFile=target/cp.txt -Dmdep.includeScope=test
+    - name: Run default matrix
+      run: |
+        CP="core/target/test-classes:core/target/classes:$(cat core/target/cp.txt)"
+        java -cp "$CP" -Dout=results-default-jdk${{ matrix.java-version }}.csv \
+          com.github.mlangc.more.log4j2.filters.ThrottlingFilterRaceExperiment \
+          | tee results-default-jdk${{ matrix.java-version }}.txt
+    - name: Run worst-case hunt
+      run: |
+        CP="core/target/test-classes:core/target/classes:$(cat core/target/cp.txt)"
+        n=$(nproc)
+        java -cp "$CP" -Dout=results-hunt-jdk${{ matrix.java-version }}.csv \
+          -Dintervals=100us,1ms -DmaxEvents=10,100,1000 -DwindowsScale=5 -Dthreads=$n,$((4*n)),$((16*n)) -Dmodes=SATURATE,BURST \
+          -Dimpls=throttling,reference \
+          com.github.mlangc.more.log4j2.filters.ThrottlingFilterRaceExperiment \
+          | tee results-hunt-jdk${{ matrix.java-version }}.txt
+    - name: Summary
+      if: ${{ !cancelled() }}
+      run: |
+        { echo '```'; cat results-*.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+    - name: Upload results
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: throttling-race-jdk${{ matrix.java-version }}
+        path: results-*
