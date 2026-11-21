@@ -26,7 +26,6 @@ import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configuration;
-import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilder;
 import org.apache.logging.log4j.core.impl.Log4jLogEvent;
 import org.apache.logging.log4j.message.Message;
@@ -44,6 +43,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestHelpers {
     public static final TestException TEST_EXCEPTION = new TestException();
+
+    private static final String ISOLATED_LOGGER_CONTEXT_NAME = "isolated-test-logger-context";
 
     @SuppressWarnings("serial")
     public static class TestException extends RuntimeException {
@@ -143,7 +144,9 @@ public class TestHelpers {
     public static LoggerContext loggerContextFromTestResource(String path) {
         try {
             URI uri = LoggerContext.class.getClassLoader().getResource(path).toURI();
-            return LoggerContext.getContext(LoggerContext.class.getClassLoader(), false, uri);
+            LoggerContext context = new LoggerContext(ISOLATED_LOGGER_CONTEXT_NAME, null, uri);
+            context.start();
+            return context;
         } catch (URISyntaxException | NullPointerException e) {
             throw new IllegalArgumentException("Error loading '" + path + "' from class path", e);
         }
@@ -159,13 +162,8 @@ public class TestHelpers {
     }
 
     public static LoggerContext loggerContextFromConfig(Configuration configuration) {
-        LoggerContext context = Configurator.initialize(configuration);
-        if (context.getConfiguration() != configuration) {
-            // TODO: Figure out why this seems to be sometimes necessary in tests
-            context.reconfigure(configuration);
-        }
-
-        assertThat(context.getConfiguration()).isSameAs(configuration);
+        LoggerContext context = new LoggerContext(ISOLATED_LOGGER_CONTEXT_NAME);
+        context.start(configuration);
         return context;
     }
 
@@ -190,8 +188,9 @@ public class TestHelpers {
         return candidates.get(0);
     }
 
-    public static void withAlternativeLoggerContext(ConfigurationBuilder<?> configBuilder, Consumer<LoggerContext> op) {
-        try (var context = loggerContextFromConfig(configBuilder)) {
+    public static void withReconfiguredGlobalLoggerContext(ConfigurationBuilder<?> configBuilder, Consumer<LoggerContext> op) {
+        try (var context = LoggerContext.getContext(false)) {
+            context.reconfigure(configBuilder.build(false));
             op.accept(context);
         }
     }

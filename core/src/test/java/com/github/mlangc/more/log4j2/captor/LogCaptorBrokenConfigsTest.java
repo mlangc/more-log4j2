@@ -37,7 +37,7 @@ public class LogCaptorBrokenConfigsTest {
                 .add(configBuilder.newAppender("Null", "Null"))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("Null")));
 
-        TestHelpers.withAlternativeLoggerContext(configBuilder, ignore ->
+        TestHelpers.withReconfiguredGlobalLoggerContext(configBuilder, ignore ->
                 assertThatIllegalStateException().isThrownBy(() -> LogCaptor.forClass(getClass())).withMessageContaining("readme"));
     }
 
@@ -51,7 +51,7 @@ public class LogCaptorBrokenConfigsTest {
                 .add(configBuilder.newAppender("Captor2", "Captor"))
                 .add(configBuilder.newRootLogger(Level.INFO).add(configBuilder.newAppenderRef("Captor1")));
 
-        TestHelpers.withAlternativeLoggerContext(configBuilder, ignore ->
+        TestHelpers.withReconfiguredGlobalLoggerContext(configBuilder, ignore ->
                 assertThatIllegalStateException().isThrownBy(() -> LogCaptor.forClass(getClass())).withMessageContaining("readme"));
     }
 }

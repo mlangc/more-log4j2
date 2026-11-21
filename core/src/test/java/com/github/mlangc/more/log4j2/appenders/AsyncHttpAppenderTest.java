@@ -2063,12 +2063,26 @@ class AsyncHttpAppenderTest {
                 return System.nanoTime() - nanos0;
             };
 
-            var elapsedMillis = IntStream.of(1, 1, 1, 1, 5, 10, 20, -1)
-                    .mapToLong(logAndClose)
-                    .skip(3) // <-- the first few iterations are considered "warmup" runs
-                    .toArray();
+            // Note that we run the slowest trials first since they are potentially slowed down by a cold JVM.
+            // Previously, this test started with the fastest trials, which resulted in occasional flakes.
+            var elapsedMillis = IntStream.of(1, -1, 10, 5, 1)
+                    .mapToLong(t -> {
+                        var samples = new long[5];
+                        for (int i = 0; i < samples.length; i++) {
+                            samples[i] = logAndClose.applyAsLong(t);
+                        }
 
-            assertThat(elapsedMillis).isSorted();
+                        // Returns the median since it's less affected by outliers than the average which could
+                        // otherwise cause flakes.
+                        Arrays.sort(samples);
+                        return samples[samples.length / 2];
+                    })
+                    .skip(1) // <-- the first iteration is considered a "warmup" run
+                    .mapToDouble(ns -> ns * 1e-6)
+                    .boxed()
+                    .toList();
+
+            assertThat(elapsedMillis).isSortedAccordingTo(Comparator.reverseOrder());
         }
     }
 
