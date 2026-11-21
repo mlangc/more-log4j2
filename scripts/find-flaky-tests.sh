@@ -17,6 +17,9 @@ RERUN_FAILURES=""
 RERUN_CLASSES=()
 TOTAL_TESTS_RUN=0
 FAIL_FAST=false
+MERGE_MODE=false
+MERGE_FILES=()
+FAIL_ON_FAILURES=false
 
 usage() {
     cat <<'EOF'
@@ -36,7 +39,17 @@ Run mode (default):
   --help
 
 Report mode:
-  --report FILE         Print summary from an existing results file
+  --report FILE     Print summary from an existing results file
+
+Merge mode:
+  --merge FILE...   Merge results files (e.g. from parallel CI jobs) into the --output file,
+                    then print its summary. Iterations are renumbered so they stay unique.
+                    The output file must not exist yet. Streaks are not shown for merged files,
+                    since their iterations did not run one after another.
+
+Report and merge mode:
+  --fail-on-failures
+                    Exit with status 1 if any test failed or errored
 EOF
 }
 
@@ -51,6 +64,11 @@ parse_args() {
             --rerun-failures) RERUN_FAILURES="$2"; shift 2 ;;
             --report)     REPORT_MODE=true; OUTPUT_FILE="$2"; shift 2 ;;
             --fail-fast)  FAIL_FAST=true; shift ;;
+            --merge)
+                MERGE_MODE=true; shift
+                while [[ $# -gt 0 && "$1" != --* ]]; do MERGE_FILES+=("$1"); shift; done
+                ;;
+            --fail-on-failures) FAIL_ON_FAILURES=true; shift ;;
             --help)       usage; exit 0 ;;
             *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
         esac
@@ -212,6 +230,8 @@ print_summary() {
     awk -F'\t' -v from_iter="$from_iter" '
     /^#/ {
         if ($0 ~ /^# started=/) started = substr($0, 11)
+        # Streaks assume that iterations ran one after another, which is not true for merged files
+        if ($0 ~ /^# merged-from=/) merged = 1
         next
     }
     NF != 3 {
@@ -231,6 +251,7 @@ print_summary() {
         seen[key] = 1
     }
     END {
+        show_streak = (from_iter == 0 && !merged)
         title = (from_iter > 0) ? "=== Flaky Test Detection Summary (This Run) ===" \
                                  : "=== Flaky Test Detection Summary ==="
         printf "\n%s\n", title
@@ -267,7 +288,7 @@ print_summary() {
                 p = pass[key]+0; f = fail[key]+0; e = err[key]+0; s = skip[key]+0
                 total = p + f + e + s
                 pct = int(p * 100 / total)
-                if (from_iter == 0) {
+                if (show_streak) {
                     sk = streak[key]+0
                     if (sk > 0) {
                         total_before = p - sk + f + e
@@ -288,7 +309,7 @@ print_summary() {
         } else {
             for (i = 0; i < n_always_fail; i++) {
                 key = always_fail_keys[i]
-                if (from_iter == 0)
+                if (show_streak)
                 printf "  %-70s  fail=%d error=%d  streak=%d\n", key, fail[key]+0, err[key]+0, streak[key]+0
             else
                 printf "  %-70s  fail=%d error=%d\n", key, fail[key]+0, err[key]+0
@@ -415,6 +436,45 @@ print_delta() {
     ' "$file"
 }
 
+# Writes the merged results file: the started= line of the first input, one merged-from= line per
+# input, and all result lines with their iterations shifted past the highest iteration so far.
+merge_results_files() {
+    local output="$1"; shift
+    local file
+
+    if [[ $# -eq 0 ]]; then
+        printf 'Error: --merge: no input files given\n' >&2
+        exit 1
+    fi
+    for file in "$@"; do
+        if [[ ! -f "$file" ]]; then
+            printf 'Error: --merge: file not found: %s\n' "$file" >&2
+            exit 1
+        fi
+    done
+    if [[ -e "$output" ]]; then
+        printf 'Error: --merge: output file already exists: %s\n' "$output" >&2
+        exit 1
+    fi
+
+    {
+        grep -m1 '^# started=' "$1" || true
+        for file in "$@"; do
+            printf '# merged-from=%s\n' "$file"
+        done
+        printf '# columns: iter\ttest_key\tstatus\n'
+        awk -F'\t' -v OFS='\t' '
+            FNR == 1 { offset = max }
+            /^#/ || NF != 3 { next }
+            { $1 += offset; if ($1 > max) max = $1; print }
+        ' "$@"
+    } > "$output"
+}
+
+has_failures() {
+    awk -F'\t' '!/^#/ && NF == 3 && ($3 == "fail" || $3 == "error") { found = 1; exit } END { exit !found }' "$1"
+}
+
 print_progress() {
     local iter="$1" mvn_exit="$2" file="$3" start_iter="${4:-0}"
     local this_pass=0 this_fail=0 this_err=0
@@ -454,6 +514,15 @@ main() {
 
     parse_args "$@"
 
+    if [[ "$MERGE_MODE" == true ]] \
+        && [[ -n "$TEST_FILTER$MODULE$ITERATIONS$RERUN_FAILURES" || "$REPORT_MODE" == true || "$FAIL_FAST" == true ]]; then
+        printf 'Error: --merge cannot be combined with --test, --module, --iterations, --rerun-failures, --report or --fail-fast.\n' >&2
+        exit 1
+    fi
+    if [[ "$FAIL_ON_FAILURES" == true && "$REPORT_MODE" == false && "$MERGE_MODE" == false ]]; then
+        printf 'Error: --fail-on-failures requires --report or --merge.\n' >&2
+        exit 1
+    fi
     if [[ -n "$RERUN_FAILURES" && -n "$TEST_FILTER" ]]; then
         printf 'Error: --rerun-failures and --test are mutually exclusive.\n' >&2
         exit 1
@@ -462,8 +531,16 @@ main() {
         load_failing_classes "$RERUN_FAILURES"
     fi
 
-    if [[ "$REPORT_MODE" == true ]]; then
+    if [[ "$MERGE_MODE" == true ]]; then
+        merge_results_files "$OUTPUT_FILE" "${MERGE_FILES[@]}"
+        printf 'Merged %d file(s) into %s\n' "${#MERGE_FILES[@]}" "$OUTPUT_FILE"
+    fi
+
+    if [[ "$REPORT_MODE" == true || "$MERGE_MODE" == true ]]; then
         print_summary "$OUTPUT_FILE"
+        if [[ "$FAIL_ON_FAILURES" == true ]] && has_failures "$OUTPUT_FILE"; then
+            return 1
+        fi
         return 0
     fi
 

@@ -457,3 +457,167 @@ eval_maven_cmd_args() {
     after="$(cat "$tsv")"
     [ "$before" = "$after" ]
 }
+
+# ---- merge mode ----
+
+SCRIPT="$BATS_TEST_DIRNAME/../find-flaky-tests.sh"
+
+# Runs the script itself, not the sourced functions, since merge mode lives in main().
+run_script() {
+    run --separate-stderr env -u BATS_TEST_FILENAME bash "$SCRIPT" "$@"
+}
+
+make_job_tsv() {
+    local file="$1" started="$2"; shift 2
+    printf '# started=%s\n' "$started" > "$file"
+    printf '# columns: iter\ttest_key\tstatus\n' >> "$file"
+    local line
+    for line in "$@"; do
+        printf '%s\n' "$line" >> "$file"
+    done
+}
+
+@test "parse_args: --merge collects files up to the next option" {
+    MERGE_MODE=false; MERGE_FILES=(); OUTPUT_FILE=""
+    parse_args --merge a.tsv b.tsv --output merged.tsv
+    [ "$MERGE_MODE" = "true" ]
+    [ "${#MERGE_FILES[@]}" -eq 2 ]
+    [ "${MERGE_FILES[0]}" = "a.tsv" ]
+    [ "${MERGE_FILES[1]}" = "b.tsv" ]
+    [ "$OUTPUT_FILE" = "merged.tsv" ]
+}
+
+@test "merge_results_files: renumbers iterations and writes merged-from headers" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" 2026-01-01T00:00:00Z \
+        $'1\tcom.example.FooTest#testA\tpass' $'2\tcom.example.FooTest#testA\tfail'
+    make_job_tsv "$TEST_TMPDIR/b.tsv" 2026-02-02T00:00:00Z \
+        $'1\tcom.example.FooTest#testA\tpass' $'2\tcom.example.FooTest#testA\tpass'
+    local out="$TEST_TMPDIR/merged.tsv"
+
+    merge_results_files "$out" "$TEST_TMPDIR/a.tsv" "$TEST_TMPDIR/b.tsv"
+
+    run cat "$out"
+    [ "${lines[0]}" = "# started=2026-01-01T00:00:00Z" ]
+    [ "${lines[1]}" = "# merged-from=$TEST_TMPDIR/a.tsv" ]
+    [ "${lines[2]}" = "# merged-from=$TEST_TMPDIR/b.tsv" ]
+    [ "${lines[3]}" = $'# columns: iter\ttest_key\tstatus' ]
+    [ "${lines[4]}" = $'1\tcom.example.FooTest#testA\tpass' ]
+    [ "${lines[5]}" = $'2\tcom.example.FooTest#testA\tfail' ]
+    [ "${lines[6]}" = $'3\tcom.example.FooTest#testA\tpass' ]
+    [ "${lines[7]}" = $'4\tcom.example.FooTest#testA\tpass' ]
+    [ "${#lines[@]}" -eq 8 ]
+}
+
+@test "merge_results_files: skips malformed lines and comments of the inputs" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" 2026-01-01T00:00:00Z \
+        '# some comment' '' 'MALFORMED' $'1\tcom.example.FooTest#testA\tpass'
+    local out="$TEST_TMPDIR/merged.tsv"
+
+    merge_results_files "$out" "$TEST_TMPDIR/a.tsv"
+
+    [ "$(grep -vc '^#' "$out")" -eq 1 ]
+    ! grep -q 'some comment' "$out"
+}
+
+@test "merge_results_files: a merged file can be merged again" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass' $'2\tcom.example.FooTest#testA\tpass'
+    make_job_tsv "$TEST_TMPDIR/b.tsv" y $'1\tcom.example.FooTest#testA\tpass'
+    merge_results_files "$TEST_TMPDIR/ab.tsv" "$TEST_TMPDIR/a.tsv" "$TEST_TMPDIR/b.tsv"
+    merge_results_files "$TEST_TMPDIR/abb.tsv" "$TEST_TMPDIR/ab.tsv" "$TEST_TMPDIR/b.tsv"
+
+    run awk -F'\t' '!/^#/ { print $1 }' "$TEST_TMPDIR/abb.tsv"
+    [ "$output" = $'1\n2\n3\n4' ]
+}
+
+@test "merge_results_files: fails without input files" {
+    run merge_results_files "$TEST_TMPDIR/merged.tsv"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no input files"* ]]
+    [ ! -e "$TEST_TMPDIR/merged.tsv" ]
+}
+
+@test "merge_results_files: fails for a missing input file" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass'
+    run merge_results_files "$TEST_TMPDIR/merged.tsv" "$TEST_TMPDIR/a.tsv" "$TEST_TMPDIR/missing.tsv"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"file not found"*"missing.tsv"* ]]
+    [ ! -e "$TEST_TMPDIR/merged.tsv" ]
+}
+
+@test "merge_results_files: refuses to overwrite an existing output file, including an input" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass'
+    local before; before="$(cat "$TEST_TMPDIR/a.tsv")"
+
+    run merge_results_files "$TEST_TMPDIR/a.tsv" "$TEST_TMPDIR/a.tsv"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"already exists"* ]]
+    [ "$(cat "$TEST_TMPDIR/a.tsv")" = "$before" ]
+}
+
+@test "print_summary: merged files show no streak or unfixed" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x \
+        $'1\tcom.example.FooTest#testA\tfail' $'2\tcom.example.FooTest#testA\tpass' \
+        $'1\tcom.example.FooTest#testB\tfail'
+    merge_results_files "$TEST_TMPDIR/merged.tsv" "$TEST_TMPDIR/a.tsv"
+
+    run print_summary "$TEST_TMPDIR/merged.tsv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"com.example.FooTest#testA"* ]]
+    [[ "$output" == *"com.example.FooTest#testB"* ]]
+    [[ "$output" != *"streak="* ]]
+    [[ "$output" != *"unfixed="* ]]
+}
+
+@test "main --merge: writes the output file and prints its summary" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass'
+    make_job_tsv "$TEST_TMPDIR/b.tsv" y $'1\tcom.example.FooTest#testA\tfail'
+
+    run_script --merge "$TEST_TMPDIR/a.tsv" "$TEST_TMPDIR/b.tsv" --output "$TEST_TMPDIR/merged.tsv"
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_TMPDIR/merged.tsv" ]
+    [[ "$output" == *"Merged 2 file(s)"* ]]
+    [[ "$output" == *"Iterations   : 2"* ]]
+    [[ "$output" == *"FLAKY"*"com.example.FooTest#testA"* ]]
+}
+
+@test "main --merge --fail-on-failures: exits 1 if a test failed" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass'
+    make_job_tsv "$TEST_TMPDIR/b.tsv" y $'1\tcom.example.FooTest#testA\terror'
+
+    run_script --merge "$TEST_TMPDIR/a.tsv" "$TEST_TMPDIR/b.tsv" --output "$TEST_TMPDIR/merged.tsv" --fail-on-failures
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FLAKY"* ]]
+}
+
+@test "main --merge --fail-on-failures: exits 0 if all tests passed or were skipped" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass' $'1\tcom.example.FooTest#testB\tskip'
+
+    run_script --merge "$TEST_TMPDIR/a.tsv" --output "$TEST_TMPDIR/merged.tsv" --fail-on-failures
+    [ "$status" -eq 0 ]
+}
+
+@test "main --report --fail-on-failures: exit status reflects failures" {
+    make_job_tsv "$TEST_TMPDIR/pass.tsv" x $'1\tcom.example.FooTest#testA\tpass'
+    make_job_tsv "$TEST_TMPDIR/fail.tsv" x $'1\tcom.example.FooTest#testA\tfail'
+
+    run_script --report "$TEST_TMPDIR/pass.tsv" --fail-on-failures
+    [ "$status" -eq 0 ]
+    run_script --report "$TEST_TMPDIR/fail.tsv" --fail-on-failures
+    [ "$status" -eq 1 ]
+    run_script --report "$TEST_TMPDIR/fail.tsv"
+    [ "$status" -eq 0 ]
+}
+
+@test "main: --fail-on-failures without --report or --merge is an error" {
+    run_script --iterations 1 --fail-on-failures
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"requires --report or --merge"* ]]
+}
+
+@test "main: --merge cannot be combined with run options" {
+    make_job_tsv "$TEST_TMPDIR/a.tsv" x $'1\tcom.example.FooTest#testA\tpass'
+    run_script --merge "$TEST_TMPDIR/a.tsv" --output "$TEST_TMPDIR/merged.tsv" --test FooTest
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"cannot be combined"* ]]
+    [ ! -e "$TEST_TMPDIR/merged.tsv" ]
+}

@@ -7,7 +7,12 @@ Bash 5+ scripts for development tooling. Each supports `--help`.
   `flaky-results-<timestamp>.tsv` in the current directory (gitignored); the Surefire XML
   reports of failing iterations are copied to `target/find-flaky-tests/failures/<run>/`.
   `--rerun-failures FILE` reruns only the classes that failed in an earlier results file;
-  `--fail-fast` stops at the first failing iteration.
+  `--fail-fast` stops at the first failing iteration. `--merge FILE... --output FILE` merges
+  results files (e.g. from parallel CI jobs), renumbering iterations; summaries of merged
+  files (marked by `# merged-from=` headers) omit streaks. `--fail-on-failures` makes
+  `--report` and `--merge` exit 1 if any test failed. The manually triggered
+  `.github/workflows/find-flaky-tests.yml` runs the script on parallel CI jobs and merges
+  their results.
 - `extract-surefire-failure.sh` — extracts failure messages and captured output from a
   Surefire XML report (`TEST-*.xml`), e.g. one of the copies above. Works from any
   directory.
