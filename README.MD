@@ -23,13 +23,13 @@ the coordinates `com.github.mlangc:more-log4j2`. It requires only log4j2 and at 
     * [CapturingAppender](#Capturing-Appender)
     * [NullAppender](#Null-Appender)
 * Maven Coordinates
-    * [more-log4j2](#more-log4j2)
+    * [more-log4j2](#more-log4j2-1)
     * [more-log4j2-junit](#more-log4j2-junit)
     * [more-log4j2-bom](#more-log4j2-bom)
 
 ## Routing Filter
 
-I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases, that go beyond what you can do with standard
+I'd like to explain `RoutingFilter` by illustrating how it can solve two use cases that go beyond what you can do with standard
 log4j2, unless you fall back to using [ScriptFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#Script), or write a
 plugin, as I did.
 
@@ -86,7 +86,7 @@ void anywhere() {
 
 ### Use Case II: Throttling DEBUG Logs
 
-Let's imagine that you want to enable `DEBUG` or `TRACE` logs for parts your application or library code. At the same time, you
+Let's imagine that you want to enable `DEBUG` or `TRACE` logs for parts of your application or library code. At the same time, you
 want to be on the safe side, and reliably avoid log spam. Then `RoutingFilter` can help you as follows:
 
 ```xml
@@ -141,18 +141,18 @@ void routingFilter() {
 }
 ```
 
-Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, I'd suggest to use the order
+Whenever you are free to reorder `FilterRoute` elements because their matching sets don't overlap, I'd suggest using the order
 that makes your config the most readable. Putting the most commonly taken routes first might save you a few CPU cycles, however,
 apart from extreme cases, where millions of logs are filtered down to a handful of lines every second, this won't make any
 difference.
 
 ### Why does FilterRouteIf require ACCEPT?
 
-As mentioned above, a `FilterRoute` is only taken if it is the first route containing a nested `FilterRouteIf`, that evaluates to
+As mentioned above, a `FilterRoute` is only taken if it is the first route containing a nested `FilterRouteIf` that evaluates to
 `ACCEPT`. This might seem counter-intuitive, since `onMatch=NEUTRAL`
 [by default](https://logging.apache.org/log4j/2.x/manual/filters.html#common-configuration-attributes). Choosing the first route
-where `FilterRouteIf` returns `NEUTRAL` even though a later route returns `ACCEPT`, would be equally surprising. Requiring
-`ACCEPT` seems like the lesser evil to me, but I'm open for user feedback on this question.
+where `FilterRouteIf` returns `NEUTRAL` even though a later route returns `ACCEPT` would be equally surprising. Requiring
+`ACCEPT` seems like the lesser evil to me, but I'm open to user feedback on this question.
 
 ## AcceptAllFilter & NeutralFilter
 
@@ -162,7 +162,7 @@ especially useful in connection with `RoutingFilter`.
 
 ## Throttling Filter
 
-`ThrottlingFilter` is an alternative to [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter), that
+`ThrottlingFilter` is an alternative to [BurstFilter](https://logging.apache.org/log4j/2.x/manual/filters.html#BurstFilter) that
 provides roughly the same functionality, but with less overhead and without object allocations. Let's look at a few examples:
 
 ### Throttling WARN and below to at most one log per second:
@@ -195,7 +195,7 @@ This is roughly what you get with
 
 ### ThrottlingFilter Configuration
 
-Apart from the 
+Apart from the
 [standard configuration attributes](https://logging.apache.org/log4j/2.x/manual/filters.html#common-configuration-attributes)
 `onMatch` and `onMismatch`, the `ThrottlingFilter` supports the following settings:
 
@@ -213,7 +213,7 @@ purposes, this difference should be negligible.
 
 ### Performance Comparison to BurstFilter
 
-The most important performance related difference between `BurstFilter` and `ThrottlingFilter`, is that the latter is garbage free
+The most important performance-related difference between `BurstFilter` and `ThrottlingFilter`, is that the latter is garbage-free
 during steady state logging (see [here](https://logging.apache.org/log4j/2.x/manual/garbagefree.html#Filters) for mainline log4j2
 filters, that share this property). The overhead incurred by the `ThrottlingFilter`, apart from a call to
 `System.nanoTime`, is dominated by an atomic `incrementAndGet` for logs that are not throttled, and two volatile reads for logs
@@ -223,14 +223,14 @@ that are throttled. This makes it extremely lightweight.
 every invocation, which implies calls to `System.nanoTime` and some locking. In addition, the implementation moves
 `LogDelay` objects between a `DelayQueue` and a `ConcurrentLinkedQueue`, which causes the allocation of queue nodes.
 
-If you are interested in the details, please consider to take a look at the existing JMH benchmarks you find in this repository.
+If you are interested in the details, please consider taking a look at the existing JMH benchmarks you find in this repository.
 
 Finally, it's important to keep things in perspective: None of this matters, unless millions of logs are filtered out per second,
 or you are extremely sensitive about allocations.
 
 ## Async HttpAppender
 
-A high throughput asynchronous HTTP appender, that supports batching and compression. It can be used to publish logs to popular
+A high throughput asynchronous HTTP appender that supports batching and compression. It can be used to publish logs to popular
 log monitoring solutions, like [Dynatrace](#Publishing-Logs-To-Dynatrace), [Datadog](#Publishing-Logs-To-Datadog) and
 [Grafana](#Publishing-Logs-To-Grafana) and is able to deliver considerable log volumes with very little overhead.
 
@@ -244,7 +244,7 @@ look at its overall architecture:
 Logs are always appended to the current batch. If the batch is full, or `lingerMs` elapsed, it is pushed to the batch buffer, and
 a job to drain the buffer is scheduled. Buffered batches are handled in a FIFO manner, and pushed to the configured HTTP backend.
 
-Draining of the batch buffer happens asynchronously, and is accomplished by a single thread, that uses the asynchronous API of
+Draining of the batch buffer happens asynchronously, and is accomplished by a single thread that uses the asynchronous API of
 the [java.net.http.HttpClient](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html).
 
 The purpose of the batch buffer is to absorb short log bursts, and backend hiccups. It is expected to be empty or almost empty
@@ -288,7 +288,7 @@ on your classpath (see
 [log4j2.isWebapp](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.isWebapp)). You can configure how long
 the appender should wait for batches to be pushed to the backend by setting the `shutdownTimeoutMs` option.
 
-### I've set `log4j2.shutdownHookEnabled`, but I'm still losing some logs when my tests are shutdown.
+### I've set `log4j2.shutdownHookEnabled`, but I'm still losing some logs when my tests are shut down.
 
 This might be because Spring
 uses [a custom property source](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html)
@@ -310,14 +310,14 @@ are some configuration options that have an influence on the amount of logs that
   accumulate if the backend is not keeping up. On the other hand, a small batch buffer might not be able to absorb short spikes in
   log volumes, or brief hiccups of the backend.
 
-However, if you are worrying about lost logs in the event of an application crash, `AsyncHttpAppender` is
+However, if you are worried about lost logs in the event of an application crash, `AsyncHttpAppender` is
 probably [not the right tool for your use case](#should-i-use-the-asynchttpappender-in-production).
 
 ### Should I use the AsyncHttpAppender in production?
 
-Most likely not, since ingesting logs from within the logging application itself has some drawbacks, that even the best possible
-appender implementation cannot mitigate. Log aggregation and forwarding in production like setups is typically addressed by
-dedicated components, that collect, enrich, aggregate and forward logs from multiple applications.
+Most likely not, since ingesting logs from within the logging application itself has some drawbacks that even the best possible
+appender implementation cannot mitigate. Log aggregation and forwarding in production-like setups is typically addressed by
+dedicated components that collect, enrich, aggregate and forward logs from multiple applications.
 
 However, setting up this kind of infrastructure on your local machine is overkill, and might not be possible.
 
@@ -587,9 +587,9 @@ you can use the following recipe:
 
 ### Read this if you want to play with the `batchCompletionListener` option
 
-The `AsyncHttpAppender` can expose internal data for monitoring purposes to a user supplied
+The `AsyncHttpAppender` can expose internal data for monitoring purposes to a user-supplied
 `com.github.mlangc.more.log4j2.appenders.AsyncHttpAppender.BatchCompletionListener` implementation. Though the interface is
-simple, and hopefully self-explanatory, it is very easy to shoot yourself in the foot unless you read the following paragraph
+simple, and hopefully self-explanatory, it is very easy to shoot yourself in the foot unless you read the following points
 carefully:
 
 1. Your `BatchCompletionListener` will be executed by the thread that drains the batch buffer. This thread must never be blocked
@@ -781,8 +781,8 @@ and can be useful in connection with an [arbiter](https://logging.apache.org/log
 example like this:
 
 ```xml
-<!-- 
-  Forwards logs to Dynatrace using the AsyncHttpAppender if the environment variable DYNATRACE_API_V2_LOGS_INGEST is 
+<!--
+  Forwards logs to Dynatrace using the AsyncHttpAppender if the environment variable DYNATRACE_API_V2_LOGS_INGEST is
   present
  -->
 <Appenders>
@@ -823,7 +823,7 @@ example like this:
 that makes sure `AsyncHttpAppender`s are flushed after your tests have finished regardless of the
 [log4j2.shutdownHookEnabled system property](https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled),
 that might have no effect
-[due to on override from spring boot](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html).
+[due to an override from Spring Boot](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/logging/log4j2/SpringBootPropertySource.html).
 Simply putting this artifact into your test runtime classpath (`testRuntimeOnly` with Gradle) is enough. The
 `AsyncHttpAppenderFlushingTestExecutionListener`
 is [registered automatically via the ServiceLoader mechanism](https://docs.junit.org/6.0.1/advanced-topics/launcher-api.html#listeners-custom).
