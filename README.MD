@@ -264,10 +264,14 @@ If the backend is not keeping up, unsent batches accumulate in the batch buffer,
    nested `OverflowAppenderRef`. Note that only events that cannot be enqueued are forwarded to this appender; the log events in
    the already queued batches will never be forwarded to the overflow appender.
 
-### What if the backend is unreliable, or temporary unavailable?
+### What if the backend is unreliable, or temporarily unavailable?
 
 The `AsyncHttpAppender` implements retries with randomized, exponential backoff. You can control retry behavior using these
 options: `retries`, `maxBackoffMs`, `httpRetryCodes` and `retryOnIoError`.
+
+Note that retries can lead to duplicated log events: if a request times out or fails after the backend has already
+received it, the retry delivers the same batch again. This is more likely with aggressive timeouts, so don't set
+`readTimeoutMs` too low.
 
 If a batch cannot be delivered to the configured backend after having exhausted its retry budget, it is dropped, and all log
 events in this batch are lost. This will be accompanied by a warning being logged to the
