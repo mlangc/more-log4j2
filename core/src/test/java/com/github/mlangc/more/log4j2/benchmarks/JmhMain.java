@@ -31,7 +31,7 @@ public class JmhMain {
     public static void main(String[] args) throws RunnerException {
         new Runner(new OptionsBuilder()
                 .resultFormat(ResultFormatType.JSON)
-                .include(Pattern.quote(RandomInfoLogBaselineBenchmark.class.getSimpleName() + ".") + ".*" + Pattern.quote("log"))
+                .include(Pattern.quote(ThrottlingVsBurstFilterBenchmark.class.getSimpleName()))
                 .threads(1)
                 //.addProfiler("jfr")
                 .build()).run();

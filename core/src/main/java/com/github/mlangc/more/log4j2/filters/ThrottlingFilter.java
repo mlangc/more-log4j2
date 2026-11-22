@@ -40,13 +40,8 @@ import java.util.concurrent.atomic.AtomicLong;
 @Plugin(name = "ThrottlingFilter", category = Node.CATEGORY, elementType = Filter.ELEMENT_TYPE, printObject = true)
 @PerformanceSensitive("allocation")
 public class ThrottlingFilter extends AbstractFilter {
+    private final Throttler throttler;
     private final Level level;
-    private final long intervalNanos;
-    private final long maxEvents;
-    private final NanoClock nanoClock;
-
-    private final AtomicLong startTicks;
-    private final AtomicLong eventCounter;
 
     ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEvents) {
         this(onMatch, onMismatch, level, intervalNanos, maxEvents, System::nanoTime);
@@ -55,23 +50,8 @@ public class ThrottlingFilter extends AbstractFilter {
     ThrottlingFilter(Result onMatch, Result onMismatch, Level level, long intervalNanos, long maxEvents, NanoClock nanoClock) {
         super(onMatch, onMismatch);
 
-        if (intervalNanos <= 0) {
-            throw new IllegalArgumentException("interval must be positive");
-        }
-
-        if (maxEvents <= 0) {
-            throw new IllegalArgumentException("maxEvents must be positive");
-        }
-
         this.level = level;
-        this.intervalNanos = intervalNanos;
-        this.maxEvents = maxEvents;
-        this.nanoClock = nanoClock;
-        this.eventCounter = new AtomicLong();
-
-        // Note: We could just initialize `startTicks` with `ticker.currentTicks()`, however, aligning intervals along multiples
-        // of `intervalNanos` makes the behaviour of the filter more predictable for tests.
-        this.startTicks = new AtomicLong(Math.floorDiv(nanoClock.nanoTime(), intervalNanos) * intervalNanos);
+        this.throttler = new BestEffortThrottler(intervalNanos, maxEvents, nanoClock);
     }
 
     @Override
@@ -171,52 +151,138 @@ public class ThrottlingFilter extends AbstractFilter {
             return onMatch;
         }
 
-        // Note: `t` is read once, before the CAS loop. Correctness-wise either position is defensible:
-        // reading inside the loop gives a `t` slightly closer to when the log event's own timestamp will
-        // be captured (which happens after this method returns), but reading outside better reflects when
-        // the call was issued. Performance clearly favors reading once.
-        long t = nanoClock.nanoTime();
-        while (true) {
-            long t0 = startTicks.get();
-            if (t - t0 < intervalNanos) {
-                if (eventCounter.get() >= maxEvents) {
-                    return onMismatch;
-                }
-
-                return eventCounter.incrementAndGet() <= maxEvents ? onMatch : onMismatch;
-            }
-
-            long intoNewInterval = (t - t0) % intervalNanos;
-            long newStartTicks = t - intoNewInterval;
-            if (startTicks.compareAndSet(t0, newStartTicks)) {
-                // Note: This update is racy — another thread may increment eventCounter after the compareAndSet
-                // but before the set below. As a result, some events may not be counted, allowing a few extra
-                // logs through. Fixing this would require treating startTicks and eventCounter as
-                // a single atomic unit, e.g., with an AtomicReference<State> or a lock. Both alternatives have
-                // downsides: object churn or added overhead. Given the rarity and minor impact of this race,
-                // allowing occasional extra logs is an acceptable trade-off for performance.
-                eventCounter.set(1);
-                return onMatch;
-            }
-        }
+        return throttler.throttle() ? onMismatch : onMatch;
     }
 
     long intervalNanos() {
-        return intervalNanos;
+        return throttler.intervalNanos;
     }
 
     long maxEvents() {
-        return maxEvents;
+        return throttler.maxEvents;
     }
 
     @Override
     public String toString() {
         return "ThrottlingFilter{" +
                "level=" + level +
-               ", interval=" + Duration.ofNanos(intervalNanos) +
-               ", eventsPerInterval=" + maxEvents +
+               ", interval=" + Duration.ofNanos(throttler.intervalNanos) +
+               ", eventsPerInterval=" + throttler.maxEvents +
                ", onMatch=" + onMatch +
                ", onMismatch=" + onMismatch +
                '}';
+    }
+
+    static abstract class Throttler {
+        final long intervalNanos;
+        final long maxEvents;
+        final NanoClock nanoClock;
+
+        Throttler(long intervalNanos, long maxEvents, NanoClock nanoClock) {
+            if (intervalNanos <= 0) {
+                throw new IllegalArgumentException("interval must be positive");
+            }
+
+            if (maxEvents <= 0) {
+                throw new IllegalArgumentException("maxEvents must be positive");
+            }
+
+            this.intervalNanos = intervalNanos;
+            this.maxEvents = maxEvents;
+            this.nanoClock = nanoClock;
+        }
+
+        abstract boolean throttle();
+
+        long startOfPreviousInterval() {
+            // Note: We could just initialize `startTicks` with `ticker.currentTicks()`, however, aligning intervals along multiples
+            // of `intervalNanos` makes the behaviour of the filter more predictable for tests.
+            return Math.floorDiv(nanoClock.nanoTime(), intervalNanos) * intervalNanos;
+        }
+    }
+
+    static class BestEffortThrottler extends Throttler {
+        final AtomicLong startTicks;
+        final AtomicLong eventCounter = new AtomicLong();
+
+        BestEffortThrottler(long intervalNanos, long maxEvents, NanoClock nanoClock) {
+            super(intervalNanos, maxEvents, nanoClock);
+            this.startTicks = new AtomicLong(startOfPreviousInterval());
+        }
+
+        @Override
+        boolean throttle() {
+            // Note: `t` is read once, before the CAS loop. Correctness-wise either position is defensible:
+            // reading inside the loop gives a `t` slightly closer to when the log event's own timestamp will
+            // be captured (which happens after this method returns), but reading outside better reflects when
+            // the call was issued. Performance clearly favors reading once.
+            long t = nanoClock.nanoTime();
+            while (true) {
+                long t0 = startTicks.get();
+
+                if (t < t0) {
+                    t = nanoClock.nanoTime();
+                }
+
+                if (t - t0 < intervalNanos) {
+                    if (eventCounter.get() >= maxEvents) {
+                        return true;
+                    }
+
+                    return eventCounter.incrementAndGet() > maxEvents;
+                }
+
+                long intoNewInterval = (t - t0) % intervalNanos;
+                long newStartTicks = t - intoNewInterval;
+                if (startTicks.compareAndSet(t0, newStartTicks)) {
+                    // Note: This update is racy — another thread may increment eventCounter after the compareAndSet
+                    // but before the set below. As a result, some events may not be counted, allowing a few extra
+                    // logs through. Fixing this would require treating startTicks and eventCounter as
+                    // a single atomic unit, e.g., with an AtomicReference<State> or a lock. Both alternatives have
+                    // downsides: object churn or added overhead. Given the rarity and minor impact of this race,
+                    // allowing occasional extra logs is an acceptable trade-off for performance.
+                    eventCounter.set(1);
+                    return false;
+                }
+            }
+        }
+    }
+
+    static class SynchronizingThrottler extends Throttler {
+        long startNanos;
+        long eventCounter;
+
+        SynchronizingThrottler(long intervalNanos, long maxEvents, NanoClock nanoClock) {
+            super(intervalNanos, maxEvents, nanoClock);
+
+            this.startNanos = startOfPreviousInterval();
+        }
+
+        @Override
+        boolean throttle() {
+            while (true) {
+                long t = nanoClock.nanoTime();
+
+                synchronized (this) {
+                    if (t < startNanos) {
+                        // This can happen if another thread manages to advance startNanos before this thread acquires the lock.
+                        continue;
+                    }
+
+                    if (t - startNanos < intervalNanos) {
+                        if (eventCounter >= maxEvents) {
+                            return true;
+                        }
+
+                        return ++eventCounter > maxEvents;
+                    } else {
+                        long intoNewIntervalNanos = (t - startNanos) % intervalNanos;
+                        startNanos = t - intoNewIntervalNanos;
+                        eventCounter = 1;
+                        return false;
+                    }
+                }
+            }
+        }
     }
 }

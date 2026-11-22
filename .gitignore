@@ -3,7 +3,7 @@
 target/
 *.class
 .java-version
-jmh-result.json
+jmh-result*.json
 *.versionsBackup
 *.iml
 release.properties
