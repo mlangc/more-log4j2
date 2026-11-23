@@ -19,12 +19,9 @@
  */
 package com.github.mlangc.more.log4j2.filters;
 
-import org.apache.logging.log4j.Level;
-import org.apache.logging.log4j.core.Filter.Result;
 import org.apache.logging.log4j.core.util.NanoClock;
 
 import java.io.PrintWriter;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,7 +31,6 @@ import java.util.Locale;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Manually run experiment (not part of the test suite) that measures how many events in excess of
@@ -49,10 +45,12 @@ import java.util.concurrent.atomic.AtomicLong;
  *     <li>Harness skew: a thread whose {@code t} is already stale when it reaches the filter's state (another thread
  *     rolled the interval over in between) is counted by the filter against the newer interval, while the naive
  *     bucketing by {@code t} puts it into the older one. To exclude this, after each accepted event the worker
- *     reads the filter's current {@code startTicks} (via reflection). If it is still in the interval of {@code t}, the
+ *     reads the throttler's current interval start. If it is still in the interval of {@code t}, the
  *     filter must have counted the event in that interval ({@code startTicks} only moves forward), so the event is
  *     <em>definite</em>; otherwise it is <em>ambiguous</em>. Overshoot computed from definite events only is a
  *     lower bound of the true overshoot, with no skew. The raw overshoot (definite + ambiguous) is reported too.</li>
+ *     <li>Candidate: {@link ThrottlingFilter.CasThrottler} (impl {@code cas}) packs interval and counter into a single
+ *     {@code AtomicLong} and must, like the control, never report a definite overshoot.</li>
  *     <li>Control: {@link LockedReference} has exactly the same semantics, including reading the clock before
  *     synchronizing, but updates its state atomically. The same harness must never report a definite overshoot for
  *     it; its raw overshoot shows how large the harness skew is.</li>
@@ -80,7 +78,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * </pre>
  * System properties (all optional): {@code intervals} (e.g. {@code 100us,1ms,10ms,100ms,1s}), {@code maxEvents}
  * (e.g. {@code 1,10,1000}), {@code threads} (e.g. {@code 1,2,4}; default 1,2,4,8,cores,4*cores), {@code modes}
- * ({@code SATURATE,BURST}), {@code impls} ({@code throttling,reference}), {@code windowsScale} (multiplies the
+ * ({@code SATURATE,BURST}), {@code impls} ({@code throttling,cas,synchronized,reference}; default {@code throttling,cas,reference}), {@code windowsScale} (multiplies the
  * default number of measured windows per interval), {@code out} (CSV output file).
  */
 public final class ThrottlingFilterRaceExperiment {
@@ -112,39 +110,80 @@ public final class ThrottlingFilterRaceExperiment {
         return t;
     };
 
+    /**
+     * {@link ThrottlingFilter.BestEffortThrottler}, the implementation {@link ThrottlingFilter} uses.
+     */
     static final class ThrottlingGate implements Gate {
-        static final Field START_TICKS;
-
-        static {
-            try {
-                START_TICKS = ThrottlingFilter.class.getDeclaredField("startTicks");
-                START_TICKS.setAccessible(true);
-            } catch (NoSuchFieldException e) {
-                throw new ExceptionInInitializerError(e);
-            }
-        }
-
-        final ThrottlingFilter filter;
-        final AtomicLong startTicks;
+        final ThrottlingFilter.BestEffortThrottler throttler;
 
         ThrottlingGate(long intervalNanos, long maxEvents) {
-            filter = new ThrottlingFilter(Result.ACCEPT, Result.DENY, Level.WARN, intervalNanos, maxEvents, CLOCK);
-            try {
-                startTicks = (AtomicLong) START_TICKS.get(filter);
-            } catch (IllegalAccessException e) {
-                throw new IllegalStateException(e);
-            }
+            throttler = new ThrottlingFilter.BestEffortThrottler(intervalNanos, maxEvents, CLOCK);
         }
 
         @Override
         public boolean pass() {
-            return filter.filter(null, Level.INFO, null, (String) null) == Result.ACCEPT;
+            return !throttler.throttle();
         }
 
         @Override
         public long currentStartTicks() {
-            return startTicks.get();
+            return throttler.startTicks.get();
         }
+    }
+
+    /**
+     * {@link ThrottlingFilter.CasThrottler}: interval index and counter packed into a single {@code AtomicLong}.
+     */
+    static final class CasGate implements Gate {
+        final ThrottlingFilter.CasThrottler throttler;
+
+        CasGate(long intervalNanos, long maxEvents) {
+            throttler = new ThrottlingFilter.CasThrottler(intervalNanos, maxEvents, CLOCK);
+        }
+
+        @Override
+        public boolean pass() {
+            return !throttler.throttle();
+        }
+
+        @Override
+        public long currentStartTicks() {
+            long intervalIndex = throttler.state.get() >>> throttler.countBits;
+            return throttler.originNanos + intervalIndex * throttler.intervalNanos;
+        }
+    }
+
+    /**
+     * {@link ThrottlingFilter.SynchronizingThrottler}.
+     */
+    static final class SynchronizedGate implements Gate {
+        final ThrottlingFilter.SynchronizingThrottler throttler;
+
+        SynchronizedGate(long intervalNanos, long maxEvents) {
+            throttler = new ThrottlingFilter.SynchronizingThrottler(intervalNanos, maxEvents, CLOCK);
+        }
+
+        @Override
+        public boolean pass() {
+            return !throttler.throttle();
+        }
+
+        @Override
+        public long currentStartTicks() {
+            synchronized (throttler) {
+                return throttler.startNanos;
+            }
+        }
+    }
+
+    static Gate newGate(String impl, long intervalNanos, long maxEvents) {
+        return switch (impl) {
+            case "throttling" -> new ThrottlingGate(intervalNanos, maxEvents);
+            case "cas" -> new CasGate(intervalNanos, maxEvents);
+            case "synchronized" -> new SynchronizedGate(intervalNanos, maxEvents);
+            case "reference" -> new LockedReference(intervalNanos, maxEvents);
+            default -> throw new IllegalArgumentException("Unknown impl: " + impl);
+        };
     }
 
     /**
@@ -228,7 +267,7 @@ public final class ThrottlingFilterRaceExperiment {
     }
 
     static Stats run(String impl, Mode mode, long intervalNanos, long maxEvents, int threads, int windows) throws InterruptedException {
-        Gate gate = "reference".equals(impl) ? new LockedReference(intervalNanos, maxEvents) : new ThrottlingGate(intervalNanos, maxEvents);
+        Gate gate = newGate(impl, intervalNanos, maxEvents);
 
         long now = System.nanoTime();
         // Leave enough time to start all threads before the first measured window.
@@ -404,7 +443,7 @@ public final class ThrottlingFilterRaceExperiment {
                 : new ArrayList<>(new TreeSet<>(List.of(1, 2, 4, 8, cores, 4 * cores)));
         List<Mode> modes = Arrays.stream(System.getProperty("modes", "SATURATE,BURST").split(","))
                 .map(String::trim).map(Mode::valueOf).toList();
-        List<String> impls = Arrays.stream(System.getProperty("impls", "throttling,reference").split(","))
+        List<String> impls = Arrays.stream(System.getProperty("impls", "throttling,cas,reference").split(","))
                 .map(String::trim).toList();
         double windowsScale = Double.parseDouble(System.getProperty("windowsScale", "1"));
         String out = System.getProperty("out");
@@ -414,7 +453,7 @@ public final class ThrottlingFilterRaceExperiment {
                 System.getProperty("os.name"), System.getProperty("os.arch"), cores);
         System.out.println("# raw* = bucketed by t only (includes harness skew); meanOver..maxOv/w0Over/hist = definite events only (lower bound, no skew)");
 
-        // Warm up both implementations (JIT) before measuring.
+        // Warm up all implementations (JIT) before measuring.
         for (String impl : impls) {
             run(impl, Mode.SATURATE, TimeUnit.MILLISECONDS.toNanos(1), 10, Math.min(4, cores), 500);
         }

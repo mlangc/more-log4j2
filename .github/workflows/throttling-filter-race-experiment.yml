@@ -51,7 +51,7 @@ jobs:
         n=$(nproc)
         java -cp "$CP" -Dout=results-hunt-jdk${{ matrix.java-version }}.csv \
           -Dintervals=100us,1ms -DmaxEvents=10,100,1000 -DwindowsScale=5 -Dthreads=$n,$((4*n)),$((16*n)) -Dmodes=SATURATE,BURST \
-          -Dimpls=throttling,reference \
+          -Dimpls=throttling,cas,reference \
           com.github.mlangc.more.log4j2.filters.ThrottlingFilterRaceExperiment \
           | tee results-hunt-jdk${{ matrix.java-version }}.txt
     - name: Summary
