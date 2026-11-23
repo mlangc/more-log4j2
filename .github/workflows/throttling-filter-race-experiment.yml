@@ -1,6 +1,7 @@
 # Experiment: measures how many extra events ThrottlingFilter lets through because of the race
 # between startTicks.compareAndSet(...) and eventCounter.set(1). Runs
-# ThrottlingFilterRaceExperiment (a main program under core/src/test) and uploads its output.
+# ThrottlingFilterRaceExperiment and ThrottlingFilterBlackboxRaceExperiment (main programs under core/src/test)
+# and uploads their output.
 # Triggered by pushes to the experiment branch, or manually once the workflow is on the default branch.
 
 name: ThrottlingFilter race experiment
@@ -39,6 +40,11 @@ jobs:
       run: |
         ./mvnw -B -q test-compile -pl core -am
         ./mvnw -B -q -pl core dependency:build-classpath -Dmdep.outputFile=target/cp.txt -Dmdep.includeScope=test
+    - name: Run blackbox experiment
+      run: |
+        CP="core/target/test-classes:core/target/classes:$(cat core/target/cp.txt)"
+        java -cp "$CP" com.github.mlangc.more.log4j2.filters.ThrottlingFilterBlackboxRaceExperiment 2>&1 \
+          | tee results-blackbox-jdk${{ matrix.java-version }}.txt
     - name: Run default matrix
       run: |
         CP="core/target/test-classes:core/target/classes:$(cat core/target/cp.txt)"
