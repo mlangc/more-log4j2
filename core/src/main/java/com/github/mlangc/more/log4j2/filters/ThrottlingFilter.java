@@ -285,4 +285,83 @@ public class ThrottlingFilter extends AbstractFilter {
             }
         }
     }
+
+    /**
+     * Lock-free throttler without the rollover race of {@link BestEffortThrottler}: the index of the current interval
+     * and the number of events counted in it are packed into a single {@code long}, so that switching to a new interval
+     * and resetting the counter happen in one CAS.
+     * <p>
+     * The low {@code countBits} bits hold the counter (just enough bits to represent {@code maxEvents}), the remaining
+     * high bits hold the interval index, counted from {@code originNanos}. The interval index is therefore stored
+     * modulo {@code 2^(64 - countBits)}; differences between interval indexes are evaluated in that width, so wrapping
+     * is harmless unless the throttler stays idle for half that many intervals (for {@code maxEvents = 1000} and
+     * 1ms intervals that's more than 200,000 years).
+     */
+    static final class CasThrottler extends Throttler {
+        final long originNanos;
+        final int countBits;
+        final long countMask;
+        final AtomicLong state;
+
+        CasThrottler(long intervalNanos, long maxEvents, NanoClock nanoClock) {
+            super(intervalNanos, maxEvents, nanoClock);
+            this.originNanos = startOfPreviousInterval();
+            this.countBits = 64 - Long.numberOfLeadingZeros(maxEvents);
+            this.countMask = (1L << countBits) - 1;
+            this.state = new AtomicLong(0); // interval 0, no events
+        }
+
+        @Override
+        boolean throttle() {
+            long t = nanoClock.nanoTime();
+            while (true) {
+                long s = state.get();
+                long delta = intervalDelta(t, s);
+
+                if (delta < 0) {
+                    // `t` was read before another thread moved `state` to a later interval. Reading the clock again
+                    // after reading `state` guarantees a `t` that is not behind `state` (nanoTime is monotonic), so
+                    // a still negative delta can only come from the interval index wrapping around after a very long
+                    // idle period, which we treat like any other move to a new interval.
+                    t = nanoClock.nanoTime();
+                    delta = intervalDelta(t, s);
+                    if (delta < 0) {
+                        delta = 1;
+                    }
+                }
+
+                if (delta == 0) {
+                    if ((s & countMask) >= maxEvents) {
+                        return true;
+                    }
+
+                    if (state.compareAndSet(s, s + 1)) {
+                        return false;
+                    }
+                } else if (state.compareAndSet(s, (intervalIndex(t) << countBits) | 1)) {
+                    return false;
+                }
+            }
+        }
+
+        private long intervalIndex(long t) {
+            return Math.floorDiv(t - originNanos, intervalNanos);
+        }
+
+        /**
+         * The difference between the interval `t` falls into and the interval stored in `s`, sign-extended from the
+         * width of the stored interval index.
+         */
+        private long intervalDelta(long t, long s) {
+            long storedIndex = s >>> countBits;
+            long startOfStoredInterval = originNanos + storedIndex * intervalNanos;
+            long intoStoredInterval = t - startOfStoredInterval;
+            if (intoStoredInterval >= 0 && intoStoredInterval < intervalNanos) {
+                // Fast path, avoiding the division in `intervalIndex`
+                return 0;
+            }
+
+            return ((intervalIndex(t) - storedIndex) << countBits) >> countBits;
+        }
+    }
 }

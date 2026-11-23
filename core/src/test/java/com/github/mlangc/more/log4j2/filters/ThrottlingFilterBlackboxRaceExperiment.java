@@ -61,13 +61,14 @@ public class ThrottlingFilterBlackboxRaceExperiment {
         runRaceExperiment(1, 100, 1, 50, LoadPattern.ALTERNATE, ThrottlingMode.SYNCHRONIZED, "  ");
         runRaceExperiment(1, 1000, 2, 200, LoadPattern.ALTERNATE, ThrottlingMode.SYNCHRONIZED, "  ");
         runRaceExperiment(1, 1000, 4, 200, LoadPattern.SATURATE, ThrottlingMode.BEST_EFFORT, "  ");
+        runRaceExperiment(1, 1000, 4, 200, LoadPattern.ALTERNATE, ThrottlingMode.CAS, "  ");
 
         LOG.printf(Level.INFO, "=============");
 
         var intervalMs = 1;
-        var numIntervals = 1000;
-        for (var numThreads : List.of(4, 100)) {
-            for (var maxEvents : List.of(1000)) {
+        var numIntervals = 2000;
+        for (var numThreads : List.of(4, 16, 100)) {
+            for (var maxEvents : List.of(10, 1000)) {
                 LOG.printf(Level.INFO, "Using %3d threads and %6d events and %4d intervals of %4dms each:", numThreads, maxEvents, numIntervals, intervalMs);
                 for (var loadPattern : List.of(LoadPattern.SATURATE, LoadPattern.ALTERNATE)) {
                     for (var throttlingMode : ThrottlingMode.values()) {
@@ -84,12 +85,13 @@ public class ThrottlingFilterBlackboxRaceExperiment {
     }
 
     enum ThrottlingMode {
-        BEST_EFFORT, SYNCHRONIZED;
+        BEST_EFFORT, SYNCHRONIZED, CAS;
 
         ThrottlingFilter.Throttler newThrottler(long intervalNs, long maxEvents, NanoClock nanoClock) {
             return switch (this) {
                 case BEST_EFFORT -> new ThrottlingFilter.BestEffortThrottler(intervalNs, maxEvents, nanoClock);
                 case SYNCHRONIZED -> new ThrottlingFilter.SynchronizingThrottler(intervalNs, maxEvents, nanoClock);
+                case CAS -> new ThrottlingFilter.CasThrottler(intervalNs, maxEvents, nanoClock);
             };
         }
     }
