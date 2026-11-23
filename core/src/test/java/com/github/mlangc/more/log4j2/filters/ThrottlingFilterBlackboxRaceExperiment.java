@@ -1,6 +1,5 @@
 package com.github.mlangc.more.log4j2.filters;
 
-import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -9,6 +8,7 @@ import org.apache.logging.log4j.core.util.NanoClock;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -17,15 +17,38 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class ThrottlingFilterBlackboxRaceExperiment {
     private static final Logger LOG = LogManager.getLogger(ThrottlingFilterBlackboxRaceExperiment.class);
 
+    @SuppressWarnings("jol")
+    final static class ThreadWithLastResultNanos extends Thread {
+        static final AtomicInteger threadIds = new AtomicInteger();
+
+        long lastResultNanos;
+
+        ThreadWithLastResultNanos(Runnable r) {
+            super(r, "throttling-filter-experiment-thread-" + threadIds.getAndIncrement());
+            setDaemon(true);
+        }
+    }
+
     static class ZeroShiftedMemorizingNanoClock implements NanoClock {
         final long startNanos = System.nanoTime();
-        final ThreadLocal<MutableLong> lastResult = ThreadLocal.withInitial(MutableLong::new);
 
         @Override
         public long nanoTime() {
             var res = nanoTimeNoMemo();
-            lastResult.get().setValue(res);
+
+            if (Thread.currentThread() instanceof ThreadWithLastResultNanos threadWithLastResultNanos) {
+                threadWithLastResultNanos.lastResultNanos = res;
+            }
+
             return res;
+        }
+
+        public long lastResultNanos() {
+            if (Thread.currentThread() instanceof ThreadWithLastResultNanos threadWithLastResultNanos) {
+                return threadWithLastResultNanos.lastResultNanos;
+            } else {
+                throw new UnsupportedOperationException();
+            }
         }
 
         long nanoTimeNoMemo() {
@@ -72,7 +95,7 @@ public class ThrottlingFilterBlackboxRaceExperiment {
     }
 
     static void runRaceExperiment(int intervalMs, long maxEvents, int numThreads, int numIntervals, LoadPattern loadPattern, ThrottlingMode throttlingMode, String prefix) throws InterruptedException, ExecutionException, TimeoutException {
-        var executor = Executors.newFixedThreadPool(numThreads);
+        var executor = Executors.newFixedThreadPool(numThreads, ThreadWithLastResultNanos::new);
         try {
             var nanoClock = new ZeroShiftedMemorizingNanoClock();
             var intervalNs = TimeUnit.MILLISECONDS.toNanos(intervalMs);
@@ -100,7 +123,7 @@ public class ThrottlingFilterBlackboxRaceExperiment {
                     }
 
                     if (!throttler.throttle()) {
-                        var intervalIdx = nanoClock.lastResult.get().longValue() / intervalNs;
+                        var intervalIdx = nanoClock.lastResultNanos() / intervalNs;
                         if (intervalIdx >= eventsPerInterval.length) {
                             break;
                         }
